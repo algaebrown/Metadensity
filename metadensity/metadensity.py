@@ -2,8 +2,8 @@ import pyBigWig
 import pandas as pd
 import sys
 sys.path.append('/home/hsher/rbp-maps/maps/')
-
 from density.ReadDensity import ReadDensity
+
 import os
 from pybedtools import BedTool
 import matplotlib.pyplot as plt
@@ -11,10 +11,11 @@ import numpy as np
 basedir = '/home/hsher/seqdata/eclip_raw/'
 from scipy.stats import entropy
 
-
-transcript = BedTool('/home/hsher/projects/gencode_transcript.gff3')
-gencode_feature = BedTool('/home/hsher/projects/gencode_combine_sorted.gff3')
+gencode_root = '/home/hsher/seqdata/20200622_gencode_coords_hsher/'
+transcript = BedTool(gencode_root + 'gencode_transcript.gff3')
+gencode_feature = BedTool(gencode_root + 'gencode_combine_sorted.gff3')
 featnames = ['five_utr', 'first_exon', 'exon', 'intron', 'last_exon','three_utr']
+
 
 def make_density(series, basedir = basedir):
     ''' Generate 3 ReadDensity Object from pd.Series from encode_data_id.pickle'''
@@ -29,17 +30,23 @@ def make_density(series, basedir = basedir):
     return all_den[0], all_den[1], all_den[2]
         
 class eCLIP:
-    def __init__(self, density_rep1 = None, density_rep2 = None, density_ctrl = None):
-        self.rep1 = density_rep1 # Read Density Objects
-        self.rep2 = density_rep2
-        self.ctrl = density_ctrl
-
-    def from_pd_series(self, series):
-        ''' from the above encode data dataframe'''
+    def __init__(self):
+        self.read_densities = {}
+        
+    def build_ENCODE(self, series):
+        ''' from the above ENCODE data dataframe'''
         rep1, rep2, ctrl = make_density(series)
-        self.__init__(rep1, rep2, ctrl)
+        self.read_densities['rep1'] = rep1
+        self.read_densities['rep2'] = rep2
+        self.read_densities['ctrl'] = ctrl
         self.uID = series['uID'].values[0]
         self.name = series['RBP'].values[0]
+
+        self.rep_keys = ['rep1', 'rep2']
+
+        # automatically add peaks
+        self.add_peaks()
+
     def add_peaks(self,
                   idr_path = '/home/hsher/seqdata/eclip_bed/sorted/',
                   indv_path = '/home/elvannostrand/data/clip/CLIPseq_analysis/ENCODE_FINALforpapers_20180205/hg38/'):
@@ -173,9 +180,8 @@ class eCLIP:
         
     def RBP_centric_approach(self, series, sample_no = 200):
         ''' create eCLIP object, get peaks, get examples, metagene and metadensity with one function. return eCLIP object'''
-        self.from_pd_series(series)
-        print('adding peaks')
-        self.add_peaks()
+        self.build_ENCODE(series)
+        
         print('finding negative/positive examples')
         self.find_idr_transcript()
         self.find_negative_example()
@@ -213,8 +219,9 @@ class Metagene:
             max_len = max([f[1]-f[0] for f in feature])
         
         for f in feature:
-            minus1, minus2 = subtract_input(eCLIP, self.chrom, f[0], f[1], self.strand)
-            
+            result_dict = remove_background(eCLIP, self.chrom, f[0], f[1], self.strand) # key = rep1, rep2, rep3; values
+            minus1 = result_dict['rep1']
+            minus2 = result_dict['rep2']
             if quantile:
                 minus1 = np.digitize(minus1, bins1)
                 minus2 = np.digitize(minus2, bins2)
@@ -264,7 +271,9 @@ class Metagene:
                 
             elif len(feature) == 1:
                 feature = list(feature)[0]
-                minus1, minus2 = subtract_input(eCLIP, self.chrom, feature[0], feature[1], self.strand)
+                result_dict = remove_background(eCLIP, self.chrom, feature[0], feature[1], self.strand)
+                minus1 = result_dict['rep1']
+                minus2 = result_dict['rep2']
                 minus1 = np.array(minus1)
                 minus2 = np.array(minus2)
             else:
@@ -340,7 +349,9 @@ class Metagene:
         feature_den2 = []
         
         # get bins
-        transcript1, transcript2 = subtract_input(eCLIP, self.chrom, self.start, self.stop, self.strand)
+        result_dict= remove_background(eCLIP, self.chrom, self.start, self.stop, self.strand)
+        transcript1 = result_dict['rep1']
+        transcript2 = result_dict['rep2']
         quantile1, bins1 = pd.qcut(transcript1, q, retbins = True,duplicates = 'drop')
         quantile2, bins2 = pd.qcut(transcript2, q, retbins = True,duplicates = 'drop')
         
@@ -364,7 +375,9 @@ class Metagene:
                 
             elif len(feature) == 1:
                 feature = list(feature)[0]
-                minus1, minus2 = subtract_input(eCLIP, self.chrom, feature[0], feature[1], self.strand)
+                result_dict = remove_background(eCLIP, self.chrom, feature[0], feature[1], self.strand)
+                minus1 = result_dict['rep1']
+                minus2 = result_dict['rep2']
                 minus1 = np.array(np.digitize(minus1, bins1)) #  np.digitize(self.densities[uID][rep][feat],bins)
                 minus2 = np.array(np.digitize(minus2, bins2))
             else:
@@ -423,50 +436,46 @@ def Build_many_metagene(key_transcript, gencode_feature = gencode_feature, sampl
     return all_metagene
 
 ########################################## calculate meta-density ##########################################
-def subtract_input(eclip, chrom, start, stop, strand):
+def remove_background(eclip, chrom, start, stop, strand, method = 'subtract'):
     '''
-    return IP density minus input density for 2 biological replicates
+    remove background by comparing IP to SMInput
+    return dictionary keys = rep1, rep2; values = np.array
     '''
-    density1 = np.nan_to_num(eclip.rep1.values(chrom, start, stop, strand),0)
-    density2 = np.nan_to_num(eclip.rep2.values(chrom, start, stop, strand),0)
+    # how many reps are there
+    rep_keys = eclip.rep_keys
+    result_dict = {}
+
+    for rep in rep_keys:
+    
+        ### get control density
+        if 'ctrl' in eclip.read_densities.keys():
+            # only 1 ctrl for both reps
+            
+            density_ctrl = np.nan_to_num(eclip.read_densities['ctrl'].values(chrom, start, stop, strand),0)
+        else:
+            # choose corresponding ctrl
+            no_rep = rep.replace('rep', '')
+            density_ctrl = np.nan_to_num(eclip.read_densities['ctrl'+no_rep].values(chrom, start, stop, strand),0)
+        
+        ### get IP density
+        density_IP = np.nan_to_num(eclip.read_densities[rep].values(chrom, start, stop, strand),0)
+
+        ### revert sign if on the negative strand
+        if strand == '-':
+            density_ctrl = -density_ctrl
+            density_IP = -density_IP
+        
+        ### remove background
+        if method == 'subtract':
+            result = np.array(density_IP) - np.array(density_ctrl)
+            # no negative value
+            result[result < 0] = 0
+        
+        result_dict[rep] = result
     
     
     
-    # get input
-    density_ctrl = np.nan_to_num(eclip.ctrl.values(chrom, start, stop, strand),0)
-    
-    if strand == '-':
-        density1 = -density1
-        density2 = -density2
-        density_ctrl = -density_ctrl
-    
-    # transcript level normalization of density (if nansum = 0, that means there is no signal)(NOT CORRECT WHEN THIS IS CALLED ON A FEATURE LEVEL)
-    #if np.nansum(np.array(density1)) != 0:
-    #    norm_den1 = np.array(density1)/np.nansum(np.array(density1))
-    #else:
-    #    norm_den1 = np.array(density1)
-    #if np.nansum(np.array(density2)) != 0:
-    #    norm_den2 = np.array(density2)/np.nansum(np.array(density2))
-    #else:
-    #    norm_den2 = np.array(density2)
-    #if np.nansum(np.array(density_ctrl)) != 0:
-    #    norm_ctrl = np.array(density_ctrl)/np.nansum(np.array(density_ctrl))
-    #else:
-    #    norm_ctrl = np.array(density_ctrl)
-    
-    # substract after normalization
-    #minus1 = norm_den1 - norm_ctrl
-    #minus2 = norm_den2 - norm_ctrl
-    
-    minus1 = np.array(density1) - np.array(density_ctrl)
-    minus2 = np.array(density2) - np.array(density_ctrl)
-    
-    # no negative value 
-    minus1[minus1 < 0] = 0
-    minus2[minus2 < 0] = 0
-    
-    
-    return minus1, minus2
+    return result_dict
 
 def trim_or_pad(density, target_length, align = 'left', pad_value = 0):
     ''' make density your target length by trimming or padding'''
