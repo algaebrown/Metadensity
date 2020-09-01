@@ -2,20 +2,21 @@ import pyBigWig
 import pandas as pd
 import sys
 sys.path.append('/home/hsher/rbp-maps/maps/')
+sys.path.append('/home/hsher/projects/Metadensity/metadensity')
 from density.ReadDensity import ReadDensity
-
+from metadensity.truncation import read_start_sites
 import os
 from pybedtools import BedTool
 import matplotlib.pyplot as plt
 import numpy as np
 basedir = '/home/hsher/seqdata/eclip_raw/'
 from scipy.stats import entropy
+from collections import Counter
+from . import settings
+transcript = BedTool(os.path.join(settings.root_dir, settings.transcript_fname))
+gencode_feature = BedTool(os.path.join(settings.root_dir, settings.gencode_feature_fname))
 
-gencode_root = '/home/hsher/seqdata/20200622_gencode_coords_hsher/'
-transcript = BedTool(gencode_root + 'gencode_transcript.gff3')
-gencode_feature = BedTool(gencode_root + 'gencode_combine_sorted.gff3')
 featnames = ['five_utr', 'first_exon', 'exon', 'intron', 'last_exon','three_utr']
-
 
 def make_density(series, basedir = basedir):
     ''' Generate 3 ReadDensity Object from pd.Series from encode_data_id.pickle'''
@@ -32,6 +33,11 @@ def make_density(series, basedir = basedir):
 class eCLIP:
     def __init__(self):
         self.read_densities = {}
+        self.name = ''
+        self.uID = ''
+        self.rep_keys = []
+        self.peaks = {}
+        self.idr = None
         
     def build_ENCODE(self, series):
         ''' from the above ENCODE data dataframe'''
@@ -46,6 +52,10 @@ class eCLIP:
 
         # automatically add peaks
         self.add_peaks()
+    def build_YTHDF(self):
+        ''' 3 control, 3 IP structure '''
+        # to do here
+        pass
 
     def add_peaks(self,
                   idr_path = '/home/hsher/seqdata/eclip_bed/sorted/',
@@ -59,124 +69,12 @@ class eCLIP:
         self.peak2 = BedTool(indv_path + indv_suffix.format(self.uID, 2))
     def find_idr_transcript(self, genome_coord = transcript):
         ''' find positive example for generateing data'''
-        self.idr_transcript = genome_coord.intersect(self.idr, s=True)
+        self.idr_transcript = genome_coord.intersect(self.idr, s=True, wa = True, u = True).saveas()
     def find_negative_example(self, genome_coord = transcript):
         ''' find negative regions as no IDR neither individual peaks'''
-        self.no_peak = genome_coord.intersect(self.idr, s=True, v=True).intersect(self.peak1, s = True, v =True).intersect(self.peak2, s = True, v =True)
-     
-    def build_metagene(self, sample_no = 200):
-        ''' Use function `Build_many_metagenes()` to get regions in UTR, intron, exon for each transcripts in self.idr_transcript and self.no_peak; store metagene in self.idr_metagene/self.neg_metagene'''
-        self.idr_metagene = Build_many_metagene(self.idr_transcript, sample_no = sample_no)
-        self.neg_metagene = Build_many_metagene(self.no_peak, sample_no = sample_no)
-    def get_metadensity(self):
-        ''' calculate metadensity for each metagene in self.idr_metagene or self.neg_metagene.
-        store density in each metagene object'''
-        _ = [m.metadensity(self) for m in self.idr_metagene.values()]
-        _ = [m.metadensity(self) for m in self.neg_metagene.values()]
-    def get_quantile_metadensity(self, q = 40):
-        ''' making features into quantile after averaging'''
-        _ = [m.quantile_metadensity(q = q) for m in self.idr_metagene.values()]
-        #_ = [m.quantile_metadensity() for m in self.neg_metagene.values()] #### negative example metadensity don't work due to not enough unique value
-    def get_feature_density_array(self, feature, target_len, align, pad_value = np.nan, example = 'positive', use_quantile = False):
-        ''' align features by padding np.nan to the 5' or 3' end '''
-        d1 = []
-        d2 = []
-        if example == 'positive':
-            metagenes = self.idr_metagene.values()
-        else:
-            metagenes = self.neg_metagene.values()
-        for m in metagenes:
-            
-            
-            
-            if use_quantile:
-                # see if multi-feature average is called
-                if type(m.qdensities[self.uID]['rep1'][feature]) == tuple:
-                    if align == 'left':
-                        d1.append(trim_or_pad(m.qdensities[self.uID]['rep1'][feature][0], target_len, align, pad_value))
-                        d2.append(trim_or_pad(m.qdensities[self.uID]['rep2'][feature][0], target_len, align, pad_value))
-                    elif align == 'right':
-                        d1.append(trim_or_pad(m.qdensities[self.uID]['rep1'][feature][1], target_len, align, pad_value))
-                        d2.append(trim_or_pad(m.qdensities[self.uID]['rep2'][feature][1], target_len, align, pad_value)) 
-                else: # only 1 entry, no such align problem!
-                    d1.append(trim_or_pad(m.qdensities[self.uID]['rep1'][feature], target_len, align, pad_value))
-                    d2.append(trim_or_pad(m.qdensities[self.uID]['rep2'][feature], target_len, align, pad_value))
-            else:
-                if type(m.densities[self.uID]['rep1'][feature]) == tuple:
-                    if align == 'left':
-                        d1.append(trim_or_pad(m.densities[self.uID]['rep1'][feature][0], target_len, align, pad_value))
-                        d2.append(trim_or_pad(m.densities[self.uID]['rep2'][feature][0], target_len, align, pad_value))
-                    elif align == 'right':
-                        d1.append(trim_or_pad(m.densities[self.uID]['rep1'][feature][1], target_len, align, pad_value))
-                        d2.append(trim_or_pad(m.densities[self.uID]['rep2'][feature][1], target_len, align, pad_value)) 
-                else:
-                    d1.append(trim_or_pad(m.densities[self.uID]['rep1'][feature], target_len, align, pad_value))
-                    d2.append(trim_or_pad(m.densities[self.uID]['rep2'][feature], target_len, align, pad_value))
-        
-        # store differntly
-        if use_quantile:
-            self.qdensity_array[example,feature,align,'rep1']= np.stack(d1)
-            self.qdensity_array[example,feature,align,'rep2']= np.stack(d2)
-        else:
-            self.density_array[example,feature,align,'rep1']= np.stack(d1)
-            self.density_array[example,feature,align,'rep2']= np.stack(d2)
-                
-        
-    def get_density_array(self, five_utr_len=100, three_utr_len=150, intron_len = 1500, exon_len = 150, use_quantile = False):
-        ''' extract metadensity from each metagene, zero pad or trim to get np array '''
-        if use_quantile:
-            examples = ['positive'] # quantile can only have positive arrays
-        else:
-            examples = ['positive', 'negative']
-        
-        self.density_array = {}
-        self.qdensity_array = {}
-        for feature, l in zip(featnames, [five_utr_len, exon_len,exon_len, intron_len, exon_len,three_utr_len]):
-            for example in examples:
-                for align in ['left', 'right']:
-                    #print(feature, example, align)
-                    self.get_feature_density_array(feature, l, align, example = example, use_quantile = use_quantile)
+        self.no_peak = genome_coord.intersect(self.idr, s=True, v=True).intersect(self.peak1, s = True, v =True).intersect(self.peak2, s = True, v =True).saveas()
     
     
-    def concat_density_array(self, example = 'positive', rep = 'rep1', quantile = False):
-        ''' return concatenated density array by sequence of featnames '''
-        if quantile:
-            concat = np.concatenate([self.qdensity_array[example, feat, align, rep] 
-                        for feat in featnames for align in ['left', 'right']],axis = 1)
-        else:
-            
-            concat = np.concatenate([self.density_array[example, feat, align, rep] 
-                        for feat in featnames for align in ['left', 'right']],axis = 1)
-        return concat
-    def scale_density_array(self, method = 'norm_by_sum', quantile = False):
-        ''' scale density array by only the features considered '''
-        self.scaled_density_array = {}
-        if quantile:
-            examples = ['positive']
-            denarray = self.qdensity_array
-        else:
-            examples = ['positive', 'negative']
-            denarray = self.density_array
-            
-        for example in examples:
-        
-            rep1_concat = self.concat_density_array(rep = 'rep1', example = example, quantile = quantile)
-            rep2_concat = self.concat_density_array(rep = 'rep2', example = example, quantile = quantile)
-        
-            if method == 'norm_by_sum':
-                scale1 = np.nansum(rep1_concat, axis = 1)[:, None]
-                scale2 = np.nansum(rep2_concat, axis = 1)[:, None]
-            
-            if method == 'max_scalar':
-                scale1 = np.nanmax(rep1_concat, axis = 1)[:, None]
-                scale2 = np.nanmax(rep2_concat, axis = 1)[:, None]
-            for rep, scale in zip(['rep1', 'rep2'], [scale1, scale2]):
-            
-                for align in ['left', 'right']:
-                    for feature in featnames:
-                        self.scaled_density_array[example,feature,align,rep] = denarray[example,feature,align,rep]/scale
-            
-           
         
     def RBP_centric_approach(self, series, sample_no = 200):
         ''' create eCLIP object, get peaks, get examples, metagene and metadensity with one function. return eCLIP object'''
@@ -185,9 +83,158 @@ class eCLIP:
         print('finding negative/positive examples')
         self.find_idr_transcript()
         self.find_negative_example()
-        print('Building metagene and metadensity')
+        
+### Metadensity
+
+class Meta:
+    ''' superclass of to inherit from '''
+    def __init__(self, eCLIP, transcripts, name, sample_no = 200):
+        self.eCLIP = eCLIP
+        self.transcript = transcripts # BedTools object
+        self.name = name
+        # TODO when initializing the exons are empty for some classes; but called using child behave normally.??
         self.build_metagene(sample_no = sample_no)
+    
+    def build_metagene(self, sample_no = 200):
+        ''' Use function `Build_many_metagenes()` to get regions in UTR, intron, exon for each transcripts in self.idr_transcript and self.no_peak; store metagene in self.idr_metagene/self.neg_metagene'''
+        self.metagene = Build_many_metagene(self.transcript, sample_no = sample_no)
+    def get_feature_density_array(self, feature, target_len, align, pad_value = np.nan, use_quantile = False, use_truncation = False):
+        ''' align features by padding np.nan to the 5' or 3' end '''
+        
+        metagenes = self.metagene.values()
+        for rep in self.eCLIP.rep_keys:
+            rep_densities = []
+            for m in metagenes:          
+                        
+                if use_quantile:
+                    den = m.qdensities[self.eCLIP.uID][rep][feature]
+                if use_truncation:
+                    den = m.truncations[self.eCLIP.uID][rep][feature]
+                else:
+                    den = m.densities[self.eCLIP.uID][rep][feature]
+            
+            
+                              
+                # see if multi-feature average is called
+                if type(den) == tuple:
+                    if align == 'left':
+                        rep_densities.append(
+                            trim_or_pad(den[0], target_len, align, pad_value)
+                        )
+                        
+                    elif align == 'right':
+                        rep_densities.append(
+                            trim_or_pad(den[1], target_len, align, pad_value)
+                        )
+                        
+                else: # only 1 entry, no such align problem!
+                    rep_densities.append(
+                        trim_or_pad(den, target_len, align, pad_value)
+                    )
+                 
+        
+            # store differntly
+            if use_quantile:
+                self.qdensity_array[feature,align,rep]= np.stack(rep_densities)
+            if use_truncation:
+                self.truncate_array[feature,align,rep]= np.stack(rep_densities)
+            else:
+                self.density_array[feature,align,rep]= np.stack(rep_densities)
+    def get_density_array(self, five_utr_len=100, three_utr_len=150, intron_len = 1500, exon_len = 150, use_quantile = False, use_truncation = False):
+        ''' extract metadensity from each metagene, zero pad or trim to get np array '''
+        
+        
+        if use_quantile:
+            self.qdensity_array = {}
+        if use_truncation:
+            self.truncate_array = {}
+        else:
+            self.density_array = {}
+        
+        for feature, l in zip(featnames, [five_utr_len, exon_len,exon_len, intron_len, exon_len,three_utr_len]):
+            for align in ['left', 'right']:
+                
+                self.get_feature_density_array(feature, l, align, use_quantile = use_quantile, use_truncation = use_truncation)
+    def concat_density_array(self, rep = 'rep1', quantile = False):
+        ''' return concatenated density array by sequence of featnames '''
+        # TODO make compatible to truncation 
+        if quantile:
+            concat = np.concatenate([self.qdensity_array[feat, align, rep] 
+                        for feat in featnames for align in ['left', 'right']],axis = 1)
+        else:
+            
+            concat = np.concatenate([self.density_array[feat, align, rep] 
+                        for feat in featnames for align in ['left', 'right']],axis = 1)
+        return concat
+    def scale_density_array(self, method = 'norm_by_sum', quantile = False):
+        
+        ''' scale density array by only the features considered '''
+        # TODO make compatible to truncation 
+        self.scaled_density_array = {}
+        if quantile:
+            
+            denarray = self.qdensity_array
+        else:
+            
+            denarray = self.density_array
+            
+        for rep in self.eCLIP.rep_keys:
+        
+            rep_concat = self.concat_density_array(rep = rep, quantile = quantile)
+            
+        
+            if method == 'norm_by_sum':
+                scale = np.nansum(rep_concat, axis = 1)[:, None]
+                
+            
+            if method == 'max_scalar':
+                scale = np.nanmax(rep_concat, axis = 1)[:, None]
+                
+                      
+            for align in ['left', 'right']:
+                for feature in featnames:
+                    self.scaled_density_array[feature,align,rep] = denarray[feature,align,rep]/scale
+
+class Metatruncate(Meta):
+    ''' Metagene for 5' read start '''
+    def __init__(self, eCLIP, transcripts, name, sample_no = 200):
+        # generate metagene coords
+        super().__init__(eCLIP, transcripts, name, sample_no)
+
+        # automatically run
+        self.get_truncation()
+    
+    
+    def get_truncation(self):
+        ''' calculate metadensity for each metagene in self.idr_metagene or self.neg_metagene.
+        store density in each metagene object'''
+        _ = [m.metatruncation(self.eCLIP) for m in self.metagene.values()]
+    
+    
+    
+class Metadensity(Meta):
+    ''' Metadensity can be created from eCLIP and a set of transcripts'''
+    def __init__(self, eCLIP, transcripts, name, sample_no = 200):
+        # generate metagene coords
+        super().__init__(eCLIP, transcripts, name, sample_no)
+
+        # automatically run
         self.get_metadensity()
+    
+    
+        
+    def get_metadensity(self):
+        ''' calculate metadensity for each metagene in self.idr_metagene or self.neg_metagene.
+        store density in each metagene object'''
+        _ = [m.metadensity(self.eCLIP) for m in self.metagene.values()]
+    def get_quantile_metadensity(self, q = 40):
+        ''' making features into quantile after averaging'''
+        _ = [m.quantile_metadensity(q = q) for m in self.metagene.values()]
+    
+    
+    
+    
+
         
         
 
@@ -206,31 +253,46 @@ class Metagene:
         self.exon = set()
         self.densities = {} # key: eCLIP uID, values: metadensity
         self.qdensities  = {}
-    def multi_feature_avg(self, feature, eCLIP, align = 'left', max_len = None, quantile = False, bins1 = None, bins2 = None):
+        self.truncations = {}
+        
+        
+        # TODO record original value before pooling
+    
+    
+    def multi_feature_avg(self, feature, eCLIP, align = 'left', max_len = None, quantile = False, bins1 = None, bins2 = None, truncation = False):
         '''
         average and align (zero padding) multiple intron/exon
         return nanmean for both replicates
         '''
-        den1 = []
-        den2 = []
+        
+        den_dict = {}
+        for rep in eCLIP.rep_keys:
+            den_dict[rep] = []
         
         # feature length
         if max_len == None:
             max_len = max([f[1]-f[0] for f in feature])
-        
+        # store into a list
         for f in feature:
-            result_dict = remove_background(eCLIP, self.chrom, f[0], f[1], self.strand) # key = rep1, rep2, rep3; values
-            minus1 = result_dict['rep1']
-            minus2 = result_dict['rep2']
-            if quantile:
-                minus1 = np.digitize(minus1, bins1)
-                minus2 = np.digitize(minus2, bins2)
-                
+            if not truncation:
+                result_dict = remove_background(eCLIP, self.chrom, f[0], f[1], self.strand) # key = rep1, rep2, rep3; values
+            for rep in eCLIP.rep_keys:
+                if truncation:
+                    minus1 = self.truncation_count(eCLIP, rep, f)
+                else:
+                    minus1 = result_dict[rep]
             
+                if quantile:
+                    minus1 = np.digitize(minus1, bins1)
+                
+                den_dict[rep].append(trim_or_pad(minus1, max_len, pad_value = np.nan, align = align))
+        # get mean
+        mean_dict = {}
+        for rep in eCLIP.rep_keys:
+            mean_dict[rep]  = np.nanmean(np.stack(den_dict[rep]), axis = 0)
         
-            den1.append(trim_or_pad(minus1, max_len, pad_value = np.nan, align = align))
-            den2.append(trim_or_pad(minus2, max_len, pad_value = np.nan, align = align))
-        return np.nanmean(np.stack(den1), axis = 0), np.nanmean(np.stack(den2), axis = 0)
+        
+        return mean_dict
         
     def first_last_exon(self):
         ''' find first, last exon '''
@@ -243,68 +305,134 @@ class Metagene:
         
         self.exon = self.exon - self.first_exon - self.last_exon
         
-    def concat_density(self, uID, rep):
+    def concat_density(self, uID, rep, truncation = False):
         ''' since some feature would have left/right, we need a special function to return concat density '''
-        left_densities = [feat[0] if type(feat) == tuple else feat for feat in self.densities[uID][rep].values()]
+        if truncation:
+            left_densities = [feat[0] if type(feat) == tuple else feat for feat in self.truncations[uID][rep].values()]
+        else:
+            
+            left_densities = [feat[0] if type(feat) == tuple else feat for feat in self.densities[uID][rep].values()]
         return np.concatenate(left_densities)
+        
+    def truncation_count(self, eCLIP, rep, feature):
+        ''' return a list of read start count for each position in feature
+        ex: sites return [10,11,12,13]; feature = (10,15); return [1,1,1,1,0] count from 5' to 3'
+        '''
+        
+        sites = read_start_sites(eCLIP.read_densities[rep].bam, chrom=self.chrom, start=feature[0], end=feature[1], strand=self.strand)
+        site_count = Counter(sites)
+        
+        pos_count = []
+        if self.strand == '+':
+            for pos in range(feature[0], feature[1]+1):
+                pos_count.append(site_count[pos])
+        if self.strand == '-':
+            for pos in range(feature[1], feature[0]-1, -1): # 15, 14, 13, 12, 11, 10
+                pos_count.append(site_count[pos])
+        return pos_count
+        
+    
+    def metatruncation(self, eCLIP):
+        ''' get truncation site count '''
+        # find first last exon
+        self.first_last_exon()
+        
+        # initialize empty dictionary to store result
+        self.truncations[eCLIP.uID] = {}
+        for rep in eCLIP.rep_keys:
+            self.truncations[eCLIP.uID][rep] = {}
+        
+        for feature, fname in zip([self.five_utr, self.first_exon, self.exon, self.intron, self.last_exon, self.three_utr], featnames):
+            if len(feature) == 0: # no such feature
+                for rep in eCLIP.rep_keys:   
+                    minus1 = np.empty(1) # np.empty does not always yield nan
+                
+                    minus1[:] = np.nan
+                    self.truncations[eCLIP.uID][rep][fname] = minus1
+            elif len(feature) == 1:
+                feature = list(feature)[0]
+                
+                for rep in eCLIP.rep_keys:
+                    
+                    minus1 = self.truncation_count(eCLIP, rep, feature)
+                    minus1 = np.array(minus1)
+                    self.truncations[eCLIP.uID][rep][fname] = minus1
+            else:
+                left_mean_dict = self.multi_feature_avg(feature, eCLIP, align = 'left', truncation = True) 
+                right_mean_dict = self.multi_feature_avg(feature, eCLIP, align = 'right', truncation = True)
+                
+
+                for rep in eCLIP.rep_keys:
+                    self.truncations[eCLIP.uID][rep][fname] = (left_mean_dict[rep], right_mean_dict[rep])
+            
+            
+        
+        # normalization
+        for rep in eCLIP.rep_keys:
+            denom = np.nansum(self.concat_density(eCLIP.uID, rep, truncation = True))
+
+            if denom != np.nan and denom != 0:
+                for fname in featnames:
+                    feat = self.truncations[eCLIP.uID][rep][fname]
+                    if type(feat) == tuple:
+                        self.truncations[eCLIP.uID][rep][fname] = (feat[0]/denom, feat[1]/denom)
+                    else:
+                        self.truncations[eCLIP.uID][rep][fname] = feat/denom
+        
+        
         
         
     def metadensity(self, eCLIP):
         ''' get metadensity from eCLIP object (containing density) 
         store. self.densities[eCLIP.uid] as dictionary {'rep1': exon: np.array}'''
                     
-        # call first and last exon
-        self.first_last_exon()       
+        
         
         # initialize
         self.densities[eCLIP.uID] = {}
-        self.densities[eCLIP.uID]['rep1'] = {}
-        self.densities[eCLIP.uID]['rep2'] = {}
+        for rep in eCLIP.rep_keys:
+            self.densities[eCLIP.uID][rep] = {}
+            
                 
         # get average density per feature
         for feature, fname in zip([self.five_utr, self.first_exon, self.exon, self.intron, self.last_exon, self.three_utr], featnames):
+            
             if len(feature) == 0: # no such feature
-                minus1 = np.empty(1) # np.empty does not always yield nan
-                minus2 = np.empty(1)
-                minus1[:] = np.nan
-                minus2[:] = np.nan
+                for rep in eCLIP.rep_keys:   
+                    minus1 = np.empty(1) # np.empty does not always yield nan
+                
+                    minus1[:] = np.nan
+                    self.densities[eCLIP.uID][rep][fname] = minus1
                 
             elif len(feature) == 1:
                 feature = list(feature)[0]
                 result_dict = remove_background(eCLIP, self.chrom, feature[0], feature[1], self.strand)
-                minus1 = result_dict['rep1']
-                minus2 = result_dict['rep2']
-                minus1 = np.array(minus1)
-                minus2 = np.array(minus2)
+                for rep in eCLIP.rep_keys:
+                    minus1 = result_dict[rep]
+                    minus1 = np.array(minus1)
+                    self.densities[eCLIP.uID][rep][fname] = minus1
+                
             else:
-                minus1_l, minus2_l = self.multi_feature_avg(feature, eCLIP, align = 'left') ######## automatically align to left, causing low value in distal intron?
-                minus1_r, minus2_r = self.multi_feature_avg(feature, eCLIP, align = 'right')
-                minus1 = (minus1_l, minus1_r)
-                minus2 = (minus2_l, minus2_r)
+                left_mean_dict = self.multi_feature_avg(feature, eCLIP, align = 'left') ######## automatically align to left, causing low value in distal intron?
+                right_mean_dict = self.multi_feature_avg(feature, eCLIP, align = 'right')
+                
+
+                for rep in eCLIP.rep_keys:
+                    self.densities[eCLIP.uID][rep][fname] = (left_mean_dict[rep], right_mean_dict[rep])
             
-            self.densities[eCLIP.uID]['rep1'][fname] = minus1
-            self.densities[eCLIP.uID]['rep2'][fname] = minus2
+            
         
         # normalization
-        denom1 = np.nansum(self.concat_density(eCLIP.uID, 'rep1'))
-        denom2 = np.nansum(self.concat_density(eCLIP.uID, 'rep2'))
-        #print(denom1, denom2) # debug
-        
-        if denom1 != np.nan and denom1 != 0:
-            for fname in featnames:
-                feat = self.densities[eCLIP.uID]['rep1'][fname]
-                if type(feat) == tuple:
-                    self.densities[eCLIP.uID]['rep1'][fname] = (feat[0]/denom1, feat[1]/denom1)
-                else:
-                    self.densities[eCLIP.uID]['rep1'][fname] = feat/denom1
-        
-        if denom2 != np.nan and denom2 != 0:
-            for fname in featnames:
-                feat = self.densities[eCLIP.uID]['rep2'][fname]
-                if type(feat) == tuple:
-                    self.densities[eCLIP.uID]['rep2'][fname] = (feat[0]/denom2, feat[1]/denom2)
-                else:
-                    self.densities[eCLIP.uID]['rep2'][fname] = feat/denom2
+        for rep in eCLIP.rep_keys:
+            denom = np.nansum(self.concat_density(eCLIP.uID, rep))
+
+            if denom != np.nan and denom != 0:
+                for fname in featnames:
+                    feat = self.densities[eCLIP.uID][rep][fname]
+                    if type(feat) == tuple:
+                        self.densities[eCLIP.uID][rep][fname] = (feat[0]/denom, feat[1]/denom)
+                    else:
+                        self.densities[eCLIP.uID][rep][fname] = feat/denom
         
     
         
@@ -409,22 +537,29 @@ class Metagene:
 
 def Build_many_metagene(key_transcript, gencode_feature = gencode_feature, sample_no = 200):
     ''' Create Metagene object for regions for key transcript '''
-    if len(key_transcript)< sample_no:
-        n = len(key_transcript)
-    else: 
-        n = sample_no
-    
-    # put into transcript
+    # Build empty metagene object
     all_metagene = {}
-    for i in range(n):
-        enst = key_transcript[i].fields[-1].split(';')[3].replace('transcript_id=', '')
-        metagene = Metagene(enst, key_transcript[i].chrom, key_transcript[i].start, key_transcript[i].stop, key_transcript[i].strand)
+   
+    if len(key_transcript)< sample_no:
+        samples = key_transcript
+        
+    else: 
+        samples = key_transcript[:sample_no]
+    
+    
+    
+    for s in samples:
+        enst = s.attrs['transcript_id']
+        metagene = Metagene(enst, s.chrom, s.start, s.stop, s.strand)
         all_metagene[enst] = metagene
     
+            
+    
     # write where is intron, exon...
-    for i in gencode_feature.filter(lambda x: x.fields[-1].split(';')[3].replace('transcript_id=', '') in all_metagene.keys()):
-        enst = i.fields[-1].split(';')[3].replace('transcript_id=', '')
+    for i in gencode_feature.filter(lambda x: x.attrs['transcript_id'] in all_metagene.keys()):
+        enst = i.attrs['transcript_id']
         feature_type = i.fields[2]
+        
         if feature_type == 'transcript':
             all_metagene[enst].intron.update([(i.start, i.stop)])
         if feature_type == 'exon':
