@@ -16,15 +16,28 @@ from metadensity.metadensity import *
 
 ax_width_dict = {'utr':1,
                 'exon':2,
-                'intron':3}
+                'intron':3,
+                'CDS':2}
 feat_len_dict = {'five_utr':100, 
                  'three_utr':150, 
                  'intron': 1500, 
-                 'exon':150}
-def generate_axis(nrows = 2, ax_width_dict = ax_width_dict, color_bar = False, feat_len_dict = feat_len_dict):
+                 'exon':150, 
+                 'CDS':150}
+def calcaulte_grid_width(features_to_show, ax_width_dict):
+    ''' calculate the number of grid needed for gridspec '''
+    n_exon = len([f for f in features_to_show if 'exon' in f])
+    n_cds = len([f for f in features_to_show if 'CDS' in f])
+    n_utr = len([f for f in features_to_show if 'utr' in f])
+    n_intron = len([f for f in features_to_show if 'intron' in f])
+
+    width = (ax_width_dict['utr']*n_utr + ax_width_dict['exon']*n_exon + ax_width_dict['intron']*n_intron + ax_width_dict['CDS']*n_cds)*2
+    return width
+
+
+def generate_axis(nrows = 2, ax_width_dict = ax_width_dict, color_bar = False, feat_len_dict = feat_len_dict, features_to_show = featnames):
     ''' generate matplotlib ax for feature plots '''
     
-    total_width = (ax_width_dict['utr']*2 + ax_width_dict['exon']*3 + ax_width_dict['intron'])*2
+    total_width = calcaulte_grid_width(features_to_show, ax_width_dict)
     if color_bar:
         total_width += 1
     height = nrows*3
@@ -39,15 +52,17 @@ def generate_axis(nrows = 2, ax_width_dict = ax_width_dict, color_bar = False, f
     
     for r in range(nrows):
         current = 0
-        for feat in featnames:
+        for feat in features_to_show:
             for align in ['left', 'right']:
                 width = ax_width_dict[feat.split('_')[-1]]
                 flen = feat_len_dict[feat.replace('first_','').replace('last_','')]
                 
-                if feat =='five_utr' and align == 'left':
+                
+                ## left y-axis
+                if feat == features_to_show[0] and align == 'left':
                     ax_dict[feat, align, 'rep{}'.format(r+1)] = fig.add_subplot(spec[r,current: current+width])
                 else:
-                    ax_dict[feat, align, 'rep{}'.format(r+1)] = fig.add_subplot(spec[r,current: current+width], sharey = ax_dict['five_utr', 'left', 'rep{}'.format(r+1)])
+                    ax_dict[feat, align, 'rep{}'.format(r+1)] = fig.add_subplot(spec[r,current: current+width], sharey = ax_dict[features_to_show[0], 'left', 'rep{}'.format(r+1)])
                     plt.setp(ax_dict[feat, align, 'rep{}'.format(r+1)].get_yticklabels(), visible=False)
                     
                 if r == 0: # if first row, add title
@@ -58,7 +73,7 @@ def generate_axis(nrows = 2, ax_width_dict = ax_width_dict, color_bar = False, f
                                   
                 
                 
-                
+                ## X-ticks with special feature
                 
                 if align == 'right':
                     ax_dict[feat, align, 'rep{}'.format(r+1)].set_xticks(np.arange(0, flen+1, flen/5))
@@ -68,7 +83,7 @@ def generate_axis(nrows = 2, ax_width_dict = ax_width_dict, color_bar = False, f
                         xticklabel[-1] = 'TTS'
                     if feat == 'intron':
                         xticklabel[-1] = '3\' SS'
-                    if feat == 'last_exon':
+                    if feat == 'last_CDS':
                         xticklabel[-1] = 'stop codon'
                     
                 else:
@@ -78,7 +93,7 @@ def generate_axis(nrows = 2, ax_width_dict = ax_width_dict, color_bar = False, f
                         xticklabel[0] = 'TSS'
                     if feat == 'intron':
                         xticklabel[0] = '5\' SS'
-                    if feat == 'first_exon':
+                    if feat == 'first_CDS':
                         xticklabel[0] = 'start codon'
                 
                 ax_dict[feat, align, 'rep{}'.format(r+1)].set_xticklabels(xticklabel, rotation = 90)    
@@ -89,9 +104,24 @@ def generate_axis(nrows = 2, ax_width_dict = ax_width_dict, color_bar = False, f
         ax_dict['colorbar'] = fig.add_subplot(spec[:,-1:])
     return fig, ax_dict
 
-def plot_rbp_map(metas, quantile = False,  scaled = False, truncation = False, alpha = 0.6, ymax = 0.003):
+####################### smoothing #######################################
+def gaussian_smooth(mean, sigma = 5):
+    ''' use gaussian kernel to smooth spiky data, sigma = stf '''
+    y_vals = mean
+    x_vals = np.arange(len(mean))
+    
+    smoothed_vals = np.zeros(y_vals.shape)
+    for x_position in x_vals:
+        kernel = np.exp(-(x_vals - x_position) ** 2 / (2 * sigma ** 2))
+        kernel = kernel / sum(kernel)
+        smoothed_vals[x_position] = sum(y_vals * kernel)
+    return smoothed_vals
+    
+
+
+def plot_rbp_map(metas, quantile = False,  scaled = False, truncation = False, alpha = 0.6, ymax = 0.003, features_to_show = featnames):
     ''' get a bunch of eCLIPs, plot their individual density in a heatmap'''
-    fig, ax_dict = generate_axis(nrows = len(metas), color_bar = True)
+    fig, ax_dict = generate_axis(nrows = len(metas), color_bar = True, features_to_show = features_to_show)
     
     # set ylabel
     
@@ -108,10 +138,10 @@ def plot_rbp_map(metas, quantile = False,  scaled = False, truncation = False, a
             den_arr = m.density_array
         if scaled:
             den_arr = m.scaled_density_array
-        for feat in featnames:
+        for feat in features_to_show:
             for align in ['left', 'right']:
                 # extract density
-                density_concat = np.concatenate([den_arr[feat,align, r] for r in ['rep1', 'rep2']], axis = 0)
+                density_concat = np.concatenate([den_arr[feat,align, r] for r in m.eCLIP.rep_keys], axis = 0)
                 # sort lexicographically for better visualization
                 #density_concat = density_concat[np.lexsort(np.rot90(density_concat))]
                 
@@ -216,9 +246,9 @@ def plot_prob(eCLIP, eCLIP_prob, example):
     plt.suptitle('{}: {} example'.format(eCLIP.name, example))
 
 # show that std is large
-def plot_mean_density(metas, ymax = 0.003, quantile = False, truncation = False, scaled = False, alpha = 0.3, plot_std = True, stat = 'mean'):
+def plot_mean_density(metas, ymax = 0.003, quantile = False, truncation = False, scaled = False, alpha = 0.3, plot_std = True, stat = 'mean', features_to_show = featnames, smooth = False):
     ''' get a bunch of eCLIPs, plot their mean density'''
-    fig, ax_dict = generate_axis(nrows = 1)
+    fig, ax_dict = generate_axis(nrows = 1,  features_to_show = features_to_show)
     
     
     
@@ -237,24 +267,28 @@ def plot_mean_density(metas, ymax = 0.003, quantile = False, truncation = False,
             den_arr = m.density_array
         if scaled:
             den_arr = m.scaled_density_array
-        for feat in featnames:
+        for feat in features_to_show:
             for align in ['left', 'right']:
-                density_concat = np.concatenate([den_arr[feat,align, r] for r in ['rep1', 'rep2']], axis = 0)
+                density_concat = np.concatenate([den_arr[feat,align, r] for r in m.eCLIP.rep_keys], axis = 0)
                 if stat == 'mean':
                     md = np.nanmean(density_concat, axis = 0)
                 if stat == 'median':
                     md = np.nanmedian(density_concat, axis = 0)
                 
                 std = np.nanstd(density_concat, axis = 0)
-                n = den_arr[feat,align, 'rep1'].shape[0] + den_arr[feat,align, 'rep2'].shape[0]
+                n = density_concat.shape[0]
                 sem = std/np.sqrt(n)
                 
                 ax = ax_dict[feat, align, 'rep1']
                 
-                ax.plot(md, label = m.name)
                 
-                if plot_std:
-                    ax.fill_between(np.arange(len(md)), md-sem, md+sem, label = m.name, alpha = alpha)
+
+                if smooth:
+                    ax.plot(gaussian_smooth(md), label = m.name)
+                else:
+                    ax.plot(md, label = m.name)
+                    if plot_std:
+                        ax.fill_between(np.arange(len(md)), md-sem, md+sem, label = m.name, alpha = alpha)
                 
                 
                     
@@ -308,7 +342,7 @@ def plot_one_density(eCLIP, transcript_index,
 
 ################################# Plots for consistency between probability, mean or median #############################
 ## consistency by scatter plot
-colors = dict(zip(featnames, ['maroon','royalblue', 'navy', 'seagreen', 'lightskyblue', 'tomato']))
+colors = dict(zip(featnames, ['maroon','royalblue', 'navy', 'seagreen', 'lightskyblue', 'tomato', 'darkviolet', 'indigo', 'mediumpurple']))
 
 def prob_consistency(eclip_prob, name, quantile = False):
     ''' plot consistency for eclip_prob '''
@@ -374,7 +408,7 @@ def mean_med_consistency(meta, use_quantile = False, use_scaled = False, ymax = 
     for f in featnames:
         for a in ['left', 'right']:
                 
-            ax[i].scatter(mean[f, a, 'rep1'], mean[f, a, 'rep2'], label = f, color = colors[f], marker = '+', alpha = 0.6)
+            ax[i].scatter(mean[f, a, 'rep1'], mean[f, a, 'm.eCLIP.rep_keys()'], label = f, color = colors[f], marker = '+', alpha = 0.6)
             ax[i].set_title('mean')
             ax[i].set_xlim((0,ymax))
             ax[i].set_ylim((0,ymax))
