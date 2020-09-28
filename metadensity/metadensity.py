@@ -2,21 +2,21 @@ import pyBigWig
 import pandas as pd
 import sys
 sys.path.append('/home/hsher/rbp-maps/maps/')
-sys.path.append('/home/hsher/projects/Metadensity/metadensity')
+
 from density.ReadDensity import ReadDensity
-from metadensity.truncation import read_start_sites
+from truncation import read_start_sites
 import os
-from pybedtools import BedTool
+from pybedtools import BedTool, create_interval_from_list
 import matplotlib.pyplot as plt
 import numpy as np
 basedir = '/home/hsher/seqdata/eclip_raw/'
 from scipy.stats import entropy
 from collections import Counter
-from . import settings
+from config import settings
 transcript = BedTool(os.path.join(settings.root_dir, settings.transcript_fname))
 gencode_feature = BedTool(os.path.join(settings.root_dir, settings.gencode_feature_fname))
 
-featnames = ['five_utr', 'first_exon', 'exon', 'intron', 'last_exon','three_utr']
+featnames = ['five_utr', 'first_exon', 'exon', 'intron', 'last_exon','three_utr', 'CDS', 'first_CDS', 'last_CDS']
 
 def make_density(series, basedir = basedir):
     ''' Generate 3 ReadDensity Object from pd.Series from encode_data_id.pickle'''
@@ -30,6 +30,15 @@ def make_density(series, basedir = basedir):
         all_den.append(density)
     return all_den[0], all_den[1], all_den[2]
         
+class STAMP:
+    def __init__(self):
+        self.read_densities = {}
+        self.name = ''
+        self.uID = ''
+        self.rep_keys = []
+        self.peaks = {} # edits for STAMP
+        self.idr = None
+        self.single_end = False
 class eCLIP:
     def __init__(self):
         self.read_densities = {}
@@ -38,6 +47,7 @@ class eCLIP:
         self.rep_keys = []
         self.peaks = {}
         self.idr = None
+        self.single_end = False
         
     def build_ENCODE(self, series):
         ''' from the above ENCODE data dataframe'''
@@ -88,12 +98,16 @@ class eCLIP:
 
 class Meta:
     ''' superclass of to inherit from '''
-    def __init__(self, eCLIP, transcripts, name, sample_no = 200):
+    def __init__(self, eCLIP, transcripts, name, sample_no = 200, metagenes = None):
         self.eCLIP = eCLIP
         self.transcript = transcripts # BedTools object
         self.name = name
+        
         # TODO when initializing the exons are empty for some classes; but called using child behave normally.??
-        self.build_metagene(sample_no = sample_no)
+        if metagenes:
+            self.metagene = metagenes # precomupted 
+        else:
+            self.build_metagene(sample_no = sample_no)
     
     def build_metagene(self, sample_no = 200):
         ''' Use function `Build_many_metagenes()` to get regions in UTR, intron, exon for each transcripts in self.idr_transcript and self.no_peak; store metagene in self.idr_metagene/self.neg_metagene'''
@@ -140,7 +154,7 @@ class Meta:
                 self.truncate_array[feature,align,rep]= np.stack(rep_densities)
             else:
                 self.density_array[feature,align,rep]= np.stack(rep_densities)
-    def get_density_array(self, five_utr_len=100, three_utr_len=150, intron_len = 1500, exon_len = 150, use_quantile = False, use_truncation = False):
+    def get_density_array(self, five_utr_len=100, three_utr_len=150, intron_len = 1500, exon_len = 150, cds_len = 150, use_quantile = False, use_truncation = False):
         ''' extract metadensity from each metagene, zero pad or trim to get np array '''
         
         
@@ -151,7 +165,7 @@ class Meta:
         else:
             self.density_array = {}
         
-        for feature, l in zip(featnames, [five_utr_len, exon_len,exon_len, intron_len, exon_len,three_utr_len]):
+        for feature, l in zip(featnames, [five_utr_len, exon_len,exon_len, intron_len, exon_len,three_utr_len, cds_len, cds_len, cds_len]):
             for align in ['left', 'right']:
                 
                 self.get_feature_density_array(feature, l, align, use_quantile = use_quantile, use_truncation = use_truncation)
@@ -197,39 +211,43 @@ class Meta:
 
 class Metatruncate(Meta):
     ''' Metagene for 5' read start '''
-    def __init__(self, eCLIP, transcripts, name, sample_no = 200):
+    def __init__(self, eCLIP, transcripts, name, sample_no = 200, background_method = 'subtract', normalize = True, metagenes = None):
         # generate metagene coords
-        super().__init__(eCLIP, transcripts, name, sample_no)
+        super().__init__(eCLIP, transcripts, name, sample_no, metagenes = metagenes)
 
         # automatically run
-        self.get_truncation()
+        self.get_truncation(background_method = background_method, normalize = normalize)
+        self.background_method = background_method
+        self.normalize = normalize
     
     
-    def get_truncation(self):
+    def get_truncation(self, background_method = 'subtract', normalize = True):
         ''' calculate metadensity for each metagene in self.idr_metagene or self.neg_metagene.
-        store density in each metagene object'''
-        _ = [m.metatruncation(self.eCLIP) for m in self.metagene.values()]
+        store density in each metagene object
+        background_method: 'subtract'; 'subtract normal'; 'relative information' How to deal with IP and Input. None for doing nothing.
+        normalize: True to use % of edits in position; False to use raw background subtract signals
+        '''
+        _ = [m.get_average_feature(self.eCLIP, background_method = background_method, normalize = normalize, truncate = True) for m in self.metagene.values()]
     
     
     
 class Metadensity(Meta):
     ''' Metadensity can be created from eCLIP and a set of transcripts'''
-    def __init__(self, eCLIP, transcripts, name, sample_no = 200):
+    def __init__(self, eCLIP, transcripts, name, sample_no = 200, background_method = 'subtract', normalize = True, metagenes = None):
         # generate metagene coords
-        super().__init__(eCLIP, transcripts, name, sample_no)
+        super().__init__(eCLIP, transcripts, name, sample_no, metagenes = metagenes)
 
         # automatically run
-        self.get_metadensity()
-    
+        self.get_metadensity(background_method = background_method, normalize = normalize)
+        self.background_method = background_method
+        self.normalize = normalize
     
         
-    def get_metadensity(self):
+    def get_metadensity(self, background_method = 'subtract', normalize = True):
         ''' calculate metadensity for each metagene in self.idr_metagene or self.neg_metagene.
         store density in each metagene object'''
-        _ = [m.metadensity(self.eCLIP) for m in self.metagene.values()]
-    def get_quantile_metadensity(self, q = 40):
-        ''' making features into quantile after averaging'''
-        _ = [m.quantile_metadensity(q = q) for m in self.metagene.values()]
+        _ = [m.get_average_feature(self.eCLIP, background_method = background_method, normalize = normalize, truncate = False) for m in self.metagene.values()]
+    
     
     
     
@@ -241,8 +259,9 @@ class Metadensity(Meta):
 ########################## Metagene class #####################################
 
 class Metagene:
-    def __init__(self, esnt, chro, start, end, strand):
+    def __init__(self, esnt, chro, start, end, strand, transcript_type):
         self.ensembl_id = esnt
+        self.type = transcript_type
         self.chrom = chro
         self.start = start
         self.stop = end
@@ -251,59 +270,228 @@ class Metagene:
         self.three_utr = set()
         self.intron = set()
         self.exon = set()
+        self.utr = set() # to accomodate hg19
+        self.cds = set() 
+
+        # TODO record raw value before pooling, save I/O time
+        self.coverage = {} # key: eCLIP uID, values: coverage RAW from 5' end to 3' end
+        self.sites = {} # key: eCLIP uID, values: RAW truncation count
+        
+        # pooled metagene density from such
         self.densities = {} # key: eCLIP uID, values: metadensity
         self.qdensities  = {}
         self.truncations = {}
-        
-        
-        # TODO record original value before pooling
     
+    ################################## about annotation ###########################################
+    def first_last_exon(self):
+        ''' find first, last exon and cds '''
+        # seperate first and last exon
+        if len(self.exon) != 0:
+            min_start = min([e[0] for e in list(self.exon)])
+            max_start = max([e[1] for e in list(self.exon)])
+        
+            if self.strand == '+':
+                self.first_exon = set([e for e in list(self.exon) if e[0] == min_start])
+                self.last_exon = set([e for e in list(self.exon) if e[1] == max_start])
+            else:
+                self.last_exon = set([e for e in list(self.exon) if e[0] == min_start])
+                self.first_exon = set([e for e in list(self.exon) if e[1] == max_start])
+        
+            self.exon = self.exon - self.first_exon - self.last_exon
+        else:
+            self.first_exon = set()
+            self.last_exon = set()
+        if len(self.cds) != 0:
+            min_start = min([e[0] for e in list(self.cds)])
+            max_start = max([e[1] for e in list(self.cds)])
+        
+            if self.strand == '+':
+                self.first_cds = set([e for e in list(self.cds) if e[0] == min_start])
+                self.last_cds = set([e for e in list(self.cds) if e[1] == max_start])
+            else:
+                self.last_cds = set([e for e in list(self.cds) if e[0] == min_start])
+                self.first_cds = set([e for e in list(self.cds) if e[1] == max_start])
+        
+            self.cds = self.cds - self.first_cds - self.last_cds
+        else:
+            self.first_cds = set()
+            m=self.last_cds = set()
+    def five_or_three_utr(self):
+        ''' to distinguish five or three utr '''
+        
+        if len(self.utr) != 0:
+            
+            # seperate first and last utr
+            min_start = min([e[0] for e in list(self.utr)])
+            max_start = max([e[1] for e in list(self.utr)])
+
+            if self.strand == '+':
+                self.five_utr = set([e for e in list(self.utr) if e[0] == min_start])
+                self.three_utr = set([e for e in list(self.utr) if e[1] == max_start])
+            else:
+            
+                self.five_utr = set([e for e in list(self.utr) if e[1] == max_start])
+                self.three_utr = set([e for e in list(self.utr) if e[0] == min_start])
     
-    def multi_feature_avg(self, feature, eCLIP, align = 'left', max_len = None, quantile = False, bins1 = None, bins2 = None, truncation = False):
+    ################################## about raw values ###########################################
+    def truncation_count(self, eCLIP, rep, feature):
+        ''' return a list of read start count for each position in feature
+        ex: sites return [10,11,12,13]; feature = (10,15); return [1,1,1,1,0] count from 5' to 3'
+        '''
+        if isinstance(eCLIP, STAMP):
+            s = '{}\t{}\t{}\t{}\t{}\t{}'.format(self.chrom, str(feature[0]), str(feature[1]), '.', '.', self.strand)
+            bed = BedTool(s, from_string=True).saveas()
+            sites_bed = eCLIP.peaks[rep].intersect(bed, s = True).saveas()
+            sites = [int(s.start) for s in sites_bed]
+            
+        else:
+            
+            sites = read_start_sites(eCLIP.read_densities[rep].bam, chrom=self.chrom, start=feature[0], end=feature[1], strand=self.strand, single_end = eCLIP.single_end)
+        
+        site_count = Counter(sites)
+        
+        pos_count = []
+        if self.strand == '+':
+            for pos in range(feature[0], feature[1]+1):
+                pos_count.append(site_count[pos])
+        if self.strand == '-':
+            for pos in range(feature[1], feature[0]-1, -1): # 15, 14, 13, 12, 11, 10
+                pos_count.append(site_count[pos])
+        return np.array(pos_count)  
+    
+    def coverage_value(self, eCLIP, rep, feature):
+        ''' return raw RPM value from bigwig files for each position in feature 
+        from 5' to 3' end '''
+        rpm = np.nan_to_num(eCLIP.read_densities[rep].values(chrom, start, stop, strand),0)
+        if self.strand == '-':
+            rpm = -rpm
+        
+        return rpm
+    
+    def get_raw_value(self, eCLIP, truncate = False):
+        ''' fetch raw coverage/truncation value for whole gene 
+        write in self.coverage or self.sites'''
+        
+        if truncate:
+            self.sites[eCLIP.uID] = {}
+            save = self.sites
+        else:
+            self.coverage[eCLIP.uID] = {}
+            save = self.coverage
+        
+        # for ips and controls
+        for rep in eCLIP.read_densities.keys():
+            
+            if truncate:
+                save[eCLIP.uID][rep] = self.truncation_count(eCLIP, rep, (self.start, self.stop)) # save list from 5' to 3'
+            else:
+                save[eCLIP.uID][rep] = self.coverage_value(eCLIP, rep, (self.start, self.stop))
+    ################################## about background removal ###########################################
+    def remove_background(self, eCLIP, rep, method = 'subtract', truncate = False):
+        ''' remove background by method
+        method = 'subtract': subtract IP from Input
+        method = 'subtract normal': subtract IP distribution from Input distribution
+        method = 'relative information': take relative entropy
+        '''
+        if truncate:
+            save = self.sites
+        else:
+            save = self.coverage
+        
+        # determine how many control
+        if 'ctrl' in save[eCLIP.uID].keys():
+            control_raw = save[eCLIP.uID]['ctrl']
+        else:
+            control_raw = save[eCLIP.uID]['ctrl'+rep.replace('rep','')] # ctrl1
+        
+        raw = save[eCLIP.uID][rep]
+        
+        # perform background removal
+        if method == 'subtract':
+            values = raw - control_raw
+            # replace negative value with 0
+            values[values < 0] = 0
+        if method == 'subtract normal':
+            if np.sum(raw) == 0:
+                values = np.zeros(raw.shape)
+            elif np.sum(control_raw) == 0:
+                values = raw/np.sum(raw)
+            else:
+                values = raw/np.sum(raw) - control_raw/np.sum(control_raw)
+            # replace negative value with 0
+            values[values < 0] = 0
+        if method == 'relative information':
+            # handle 0, add pseudocount
+            
+            if truncate:
+                ip_pseudocount = 1 #TODO this is not compatible with density
+                control_pseudocount = 1
+            else:
+                non_zero = raw[np.where(raw>0)]
+                ip_pseudocount = np.min(non_zero) # assume the minimal non-zero density equals one read
+
+                non_zero = raw[np.where(control_raw>0)]
+                if len(non_zero) == 0:
+                    control_pseudocount = 1 # doesn't matter, uniform distribution
+                else:
+                    control_pseudocount = np.min(non_zero)
+            
+            raw_added = raw + ip_pseudocount
+            control_added = control_raw + control_pseudocount
+
+            # get fraction, pi and qi
+            ip_norm = raw_added/np.sum(raw_added) # pi
+            input_norm = control_added/np.sum(control_added) # qi
+            
+            
+
+
+            values = np.multiply(
+                ip_norm,
+                np.log2(np.divide(ip_norm, input_norm))
+                ) # pi * log2(pi/qi)
+        if method == None:
+            values = raw # do nothing with background
+        
+        return values   
+    
+    ################################## about axis ###########################################    
+    def to_relative_axis(self, feature):
+        ''' self.start = 1000, self.stop = 5000, self.strand = -, feature = (1000,1005)
+        return (5000-1005, 5000-1000) = (3995, 4000)
+        if strand +, (1000-1000, 1005-1000) '''
+        if self.strand == '-':
+            relative_feature = (self.stop - feature[1], self.stop - feature[0])
+        else:
+            relative_feature = (feature[0]-self.start, feature[1] - self.start)
+        return relative_feature
+    
+    ################################## about annotation ###########################################
+    def multi_feature_avg(self, feature, values, align = 'left', max_len = None):
         '''
         average and align (zero padding) multiple intron/exon
-        return nanmean for both replicates
+        feature: list of intervals for multiple exons/cds/intron; ex: [(1,100), (2,950)]
+        values: 5' to 3' processed value (remove background, normalize) of the whole gene
+        align: align feature of different length to the left or right
+        return: average feature (np.array)
         '''
-        
-        den_dict = {}
-        for rep in eCLIP.rep_keys:
-            den_dict[rep] = []
-        
+        all_feature_values = []
         # feature length
         if max_len == None:
             max_len = max([f[1]-f[0] for f in feature])
-        # store into a list
+        
         for f in feature:
-            if not truncation:
-                result_dict = remove_background(eCLIP, self.chrom, f[0], f[1], self.strand) # key = rep1, rep2, rep3; values
-            for rep in eCLIP.rep_keys:
-                if truncation:
-                    minus1 = self.truncation_count(eCLIP, rep, f)
-                else:
-                    minus1 = result_dict[rep]
-            
-                if quantile:
-                    minus1 = np.digitize(minus1, bins1)
-                
-                den_dict[rep].append(trim_or_pad(minus1, max_len, pad_value = np.nan, align = align))
-        # get mean
-        mean_dict = {}
-        for rep in eCLIP.rep_keys:
-            mean_dict[rep]  = np.nanmean(np.stack(den_dict[rep]), axis = 0)
+            axis = self.to_relative_axis(f)
+            feature_values = values[axis[0]:axis[1]] # window around
+            all_feature_values.append(trim_or_pad(feature_values, max_len, pad_value = np.nan, align = align)) # pad to the same length then append
         
         
-        return mean_dict
         
-    def first_last_exon(self):
-        ''' find first, last exon '''
-        # seperate first and last exon
-        min_start = min([e[0] for e in list(self.exon)])
-        max_start = max([e[1] for e in list(self.exon)])
+        feature_average  = np.nanmean(np.stack(all_feature_values), axis = 0)
+        return feature_average
         
-        self.first_exon = set([e for e in list(self.exon) if e[0] == min_start])
-        self.last_exon = set([e for e in list(self.exon) if e[1] == max_start])
-        
-        self.exon = self.exon - self.first_exon - self.last_exon
+    
+
         
     def concat_density(self, uID, rep, truncation = False):
         ''' since some feature would have left/right, we need a special function to return concat density '''
@@ -314,132 +502,72 @@ class Metagene:
             left_densities = [feat[0] if type(feat) == tuple else feat for feat in self.densities[uID][rep].values()]
         return np.concatenate(left_densities)
         
-    def truncation_count(self, eCLIP, rep, feature):
-        ''' return a list of read start count for each position in feature
-        ex: sites return [10,11,12,13]; feature = (10,15); return [1,1,1,1,0] count from 5' to 3'
-        '''
-        
-        sites = read_start_sites(eCLIP.read_densities[rep].bam, chrom=self.chrom, start=feature[0], end=feature[1], strand=self.strand)
-        site_count = Counter(sites)
-        
-        pos_count = []
-        if self.strand == '+':
-            for pos in range(feature[0], feature[1]+1):
-                pos_count.append(site_count[pos])
-        if self.strand == '-':
-            for pos in range(feature[1], feature[0]-1, -1): # 15, 14, 13, 12, 11, 10
-                pos_count.append(site_count[pos])
-        return pos_count
-        
+    def protein_coding_gene(self, eCLIP, method = 'subtract', truncate = False):
+        ''' return 5' UTR -first_cds - CDS concat - last_cds - 3' UTR metagene'''
+        pass
+        # TODO
+    def generic_RNA(self, eCLIP, method = 'subtract', truncate = False):
+        ''' return First exon - intron - exon -last exon '''
+        pass
+        # TODO
     
-    def metatruncation(self, eCLIP):
-        ''' get truncation site count '''
-        # find first last exon
-        self.first_last_exon()
-        
+    def get_average_feature(self, eCLIP, background_method = 'subtract', normalize = True, truncate = True):
+        ''' fetching values for each feature, also averaging them if needed 
+        write values in self.truncate or self.densities, depending on truncate'''
+        # fetch raw sites for all reps and ctrl
+        self.get_raw_value(eCLIP, truncate = truncate)
+
+        # save to different attributes
+        if truncate:
+            to_save = self.truncations
+            raw = self.sites
+        else:
+            to_save = self.densities
+            raw = self.coverage
+
         # initialize empty dictionary to store result
-        self.truncations[eCLIP.uID] = {}
+        to_save[eCLIP.uID] = {}
         for rep in eCLIP.rep_keys:
-            self.truncations[eCLIP.uID][rep] = {}
-        
-        for feature, fname in zip([self.five_utr, self.first_exon, self.exon, self.intron, self.last_exon, self.three_utr], featnames):
-            if len(feature) == 0: # no such feature
-                for rep in eCLIP.rep_keys:   
-                    minus1 = np.empty(1) # np.empty does not always yield nan
-                
-                    minus1[:] = np.nan
-                    self.truncations[eCLIP.uID][rep][fname] = minus1
-            elif len(feature) == 1:
-                feature = list(feature)[0]
-                
-                for rep in eCLIP.rep_keys:
-                    
-                    minus1 = self.truncation_count(eCLIP, rep, feature)
-                    minus1 = np.array(minus1)
-                    self.truncations[eCLIP.uID][rep][fname] = minus1
+            to_save[eCLIP.uID][rep] = {}
+
+            # deal with background
+            if background_method: # if background method is not None, which means not dealing with background
+                values = self.remove_background(eCLIP, rep, method = background_method, truncate = truncate)
             else:
-                left_mean_dict = self.multi_feature_avg(feature, eCLIP, align = 'left', truncation = True) 
-                right_mean_dict = self.multi_feature_avg(feature, eCLIP, align = 'right', truncation = True)
-                
+                values = raw[eCLIP.uID][rep]
 
-                for rep in eCLIP.rep_keys:
-                    self.truncations[eCLIP.uID][rep][fname] = (left_mean_dict[rep], right_mean_dict[rep])
-            
-            
-        
-        # normalization
-        for rep in eCLIP.rep_keys:
-            denom = np.nansum(self.concat_density(eCLIP.uID, rep, truncation = True))
-
-            if denom != np.nan and denom != 0:
-                for fname in featnames:
-                    feat = self.truncations[eCLIP.uID][rep][fname]
-                    if type(feat) == tuple:
-                        self.truncations[eCLIP.uID][rep][fname] = (feat[0]/denom, feat[1]/denom)
-                    else:
-                        self.truncations[eCLIP.uID][rep][fname] = feat/denom
-        
-        
-        
-        
-    def metadensity(self, eCLIP):
-        ''' get metadensity from eCLIP object (containing density) 
-        store. self.densities[eCLIP.uid] as dictionary {'rep1': exon: np.array}'''
-                    
-        
-        
-        # initialize
-        self.densities[eCLIP.uID] = {}
-        for rep in eCLIP.rep_keys:
-            self.densities[eCLIP.uID][rep] = {}
-            
-                
-        # get average density per feature
-        for feature, fname in zip([self.five_utr, self.first_exon, self.exon, self.intron, self.last_exon, self.three_utr], featnames):
-            
-            if len(feature) == 0: # no such feature
-                for rep in eCLIP.rep_keys:   
-                    minus1 = np.empty(1) # np.empty does not always yield nan
-                
-                    minus1[:] = np.nan
-                    self.densities[eCLIP.uID][rep][fname] = minus1
-                
-            elif len(feature) == 1:
-                feature = list(feature)[0]
-                result_dict = remove_background(eCLIP, self.chrom, feature[0], feature[1], self.strand)
-                for rep in eCLIP.rep_keys:
-                    minus1 = result_dict[rep]
-                    minus1 = np.array(minus1)
-                    self.densities[eCLIP.uID][rep][fname] = minus1
-                
+            # deal with normalization
+            if normalize:
+                values = values/np.sum(values)
+                # TODO: add quantile for density
             else:
-                left_mean_dict = self.multi_feature_avg(feature, eCLIP, align = 'left') ######## automatically align to left, causing low value in distal intron?
-                right_mean_dict = self.multi_feature_avg(feature, eCLIP, align = 'right')
+                pass
+            
+            # getting features:
+            for feature, fname in zip([self.five_utr, self.first_exon, self.exon, self.intron, self.last_exon, self.three_utr, self.cds, self.first_cds, self.last_cds], featnames):
+            
+                if len(feature) == 0: # no such feature
+                    minus1 = np.empty(1) # np.empty does not always yield nan
+                    minus1[:] = np.nan
+                    to_save[eCLIP.uID][rep][fname] = minus1
+                elif len(feature) == 1:
+                    feature = list(feature)[0]
+                    axis = self.to_relative_axis(feature)
+                
+                    
+                    minus1 = values[axis[0]: axis[1]]
+                    to_save[eCLIP.uID][rep][fname] = minus1
+                else:
+                    left_mean = self.multi_feature_avg(feature, values, align = 'left') 
+                    right_mean = self.multi_feature_avg(feature, values, align = 'right')
                 
 
-                for rep in eCLIP.rep_keys:
-                    self.densities[eCLIP.uID][rep][fname] = (left_mean_dict[rep], right_mean_dict[rep])
-            
-            
+                    to_save[eCLIP.uID][rep][fname] = (left_mean, right_mean)
         
-        # normalization
-        for rep in eCLIP.rep_keys:
-            denom = np.nansum(self.concat_density(eCLIP.uID, rep))
-
-            if denom != np.nan and denom != 0:
-                for fname in featnames:
-                    feat = self.densities[eCLIP.uID][rep][fname]
-                    if type(feat) == tuple:
-                        self.densities[eCLIP.uID][rep][fname] = (feat[0]/denom, feat[1]/denom)
-                    else:
-                        self.densities[eCLIP.uID][rep][fname] = feat/denom
-        
-    
-        
-        
+ 
     def quantile_metadensity(self, q = 40):
         
-        ''' quantile metadensity to equal sized bins at transcript level'''
+        ''' DEPRECATED quantile metadensity to equal sized bins at transcript level'''
         
         for uID in self.densities.keys():
             
@@ -468,7 +596,7 @@ class Metagene:
                         self.qdensities[uID][rep][feat][:] = np.nan # np.empty can generate some weirdly large number
     
     def quantile_metadensity_raw(self, eCLIP, q = 40):
-        ''' quantilize metadensity uning raw density (not pooled, not averaged)'''
+        ''' DEPRECATED quantilize metadensity uning raw density (not pooled, not averaged)'''
         uID = eCLIP.uID
         
         # initialize empty dictionary
@@ -536,7 +664,8 @@ class Metagene:
 
 
 def Build_many_metagene(key_transcript, gencode_feature = gencode_feature, sample_no = 200):
-    ''' Create Metagene object for regions for key transcript '''
+    ''' Create Metagene object for regions for key transcript 
+    hg19 does not have 'three_prime_UTR and five_prime_UTR which is annoying'''
     # Build empty metagene object
     all_metagene = {}
    
@@ -550,11 +679,12 @@ def Build_many_metagene(key_transcript, gencode_feature = gencode_feature, sampl
     
     for s in samples:
         enst = s.attrs['transcript_id']
-        metagene = Metagene(enst, s.chrom, s.start, s.stop, s.strand)
+        transcript_type = s.attrs['transcript_type']
+        metagene = Metagene(enst, s.chrom, s.start, s.stop, s.strand, transcript_type)
         all_metagene[enst] = metagene
     
             
-    
+    trigger_hg19=False
     # write where is intron, exon...
     for i in gencode_feature.filter(lambda x: x.attrs['transcript_id'] in all_metagene.keys()):
         enst = i.attrs['transcript_id']
@@ -568,49 +698,22 @@ def Build_many_metagene(key_transcript, gencode_feature = gencode_feature, sampl
             all_metagene[enst].five_utr.update([(i.start, i.stop)])
         if feature_type == 'three_prime_UTR':
             all_metagene[enst].three_utr.update([(i.start, i.stop)])
+        if feature_type == 'CDS': 
+            all_metagene[enst].cds.update([(i.start, i.stop)])
+        if feature_type == 'UTR': # hate it for hg 19
+            all_metagene[enst].utr.update([(i.start, i.stop)])
+            trigger_hg19=True
+    if trigger_hg19:
+        # need to distinguish five or three prime utr
+        for metagene in all_metagene.values():
+            metagene.five_or_three_utr()
+    # first last exon
+    for metagene in all_metagene.values():
+        metagene.first_last_exon()
+    print('Done Building Metagene')
     return all_metagene
 
 ########################################## calculate meta-density ##########################################
-def remove_background(eclip, chrom, start, stop, strand, method = 'subtract'):
-    '''
-    remove background by comparing IP to SMInput
-    return dictionary keys = rep1, rep2; values = np.array
-    '''
-    # how many reps are there
-    rep_keys = eclip.rep_keys
-    result_dict = {}
-
-    for rep in rep_keys:
-    
-        ### get control density
-        if 'ctrl' in eclip.read_densities.keys():
-            # only 1 ctrl for both reps
-            
-            density_ctrl = np.nan_to_num(eclip.read_densities['ctrl'].values(chrom, start, stop, strand),0)
-        else:
-            # choose corresponding ctrl
-            no_rep = rep.replace('rep', '')
-            density_ctrl = np.nan_to_num(eclip.read_densities['ctrl'+no_rep].values(chrom, start, stop, strand),0)
-        
-        ### get IP density
-        density_IP = np.nan_to_num(eclip.read_densities[rep].values(chrom, start, stop, strand),0)
-
-        ### revert sign if on the negative strand
-        if strand == '-':
-            density_ctrl = -density_ctrl
-            density_IP = -density_IP
-        
-        ### remove background
-        if method == 'subtract':
-            result = np.array(density_IP) - np.array(density_ctrl)
-            # no negative value
-            result[result < 0] = 0
-        
-        result_dict[rep] = result
-    
-    
-    
-    return result_dict
 
 def trim_or_pad(density, target_length, align = 'left', pad_value = 0):
     ''' make density your target length by trimming or padding'''
@@ -674,3 +777,43 @@ def pos_relative_entropy(eCLIP_prob):
             neg = np.mean(np.array([eCLIP_prob['negative', feat,align, r] for r in ['rep1', 'rep2']]), axis = 0)
             rel_ent[feat, align] = density_array_entropy(pos, neg)
     return rel_ent
+def remove_background(eclip, chrom, start, stop, strand, method = 'subtract'):
+    '''
+    remove background by comparing IP to SMInput
+    return dictionary keys = rep1, rep2; values = np.array
+    '''
+    # how many reps are there
+    rep_keys = eclip.rep_keys
+    result_dict = {}
+
+    for rep in rep_keys:
+    
+        ### get control density
+        if 'ctrl' in eclip.read_densities.keys():
+            # only 1 ctrl for both reps
+            
+            density_ctrl = np.nan_to_num(eclip.read_densities['ctrl'].values(chrom, start, stop, strand),0)
+        else:
+            # choose corresponding ctrl
+            no_rep = rep.replace('rep', '')
+            density_ctrl = np.nan_to_num(eclip.read_densities['ctrl'+no_rep].values(chrom, start, stop, strand),0)
+        
+        ### get IP density
+        density_IP = np.nan_to_num(eclip.read_densities[rep].values(chrom, start, stop, strand),0)
+
+        ### revert sign if on the negative strand
+        if strand == '-':
+            density_ctrl = -density_ctrl
+            density_IP = -density_IP
+        
+        ### remove background
+        if method == 'subtract':
+            result = np.array(density_IP) - np.array(density_ctrl)
+            # no negative value
+            result[result < 0] = 0
+        
+        result_dict[rep] = result
+    
+    
+    
+    return result_dict
