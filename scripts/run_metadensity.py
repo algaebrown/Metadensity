@@ -2,7 +2,8 @@
 print('uid', 'outdir')
 import sys
 import os
-from metadensity import eCLIP, pos_spec_bind_strength, pos_relative_entropy
+sys.path.append('/home/hsher/projects/Metadensity')
+from metadensity.metadensity import *
 import pandas as pd
 import deepdish as dd
 
@@ -29,25 +30,28 @@ def main(uID, outdir):
     e.RBP_centric_approach(data_row)
     
     # get aligned density
-    e.get_density_array()
+    mden = Metadensity(e, e.idr_transcript, e.name+'_idr',background_method = 'subtract', normalize = True)
+    mden.get_density_array()
     
-    print('calculate prob and entropy')
-    # calculate probability
-    e_prob = pos_spec_bind_strength(e)
+    # get aligned density, relative information
+    mden_ri = Metadensity(e, e.idr_transcript, e.name+'_idr',background_method = 'relative information', normalize = False, metagenes = mden.metagene.copy())
+    mden_ri.get_density_array()
     
-    # get relative entropy
-    e_entropy = pos_relative_entropy(e_prob)
+    # get truncation
+    mtru = Metadensity(e, e.idr_transcript, e.name+'_idr',background_method = 'subtract', normalize = True, metagenes = mden.metagene.copy())
+    mtru.get_density_array()
     
+       
     print('saving results to {}'.format(outdir))
     
     # save aligned density
-    dd.io.save(os.path.join(outdir, '{}_densityarr.h5'.format(e.uID)), e.density_array)
-        
-    # save probability
-    dd.io.save(os.path.join(outdir, '{}_prob.h5'.format(e.uID)), e_prob)
+    dd.io.save(os.path.join(outdir, '{}_densityarr.h5'.format(e.uID)), mden.density_array)
     
-    # save entropy
-    dd.io.save(os.path.join(outdir, '{}_entropy.h5'.format(e.uID)), e_entropy)
+    # save aligned density
+    dd.io.save(os.path.join(outdir, '{}_ridensityarr.h5'.format(e.uID)), mden_ri.density_array)
+        
+    # save aligned density
+    dd.io.save(os.path.join(outdir, '{}_truncatearr.h5'.format(e.uID)), mtru.truncate_array)
 
 if __name__ == "__main__": 
     main(uid, outdir)
