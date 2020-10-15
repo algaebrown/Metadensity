@@ -1,0 +1,9 @@
+*.pyc
+*.ipynb_checkpoints
+*.bed
+*.txt
+*.xlsx
+*.csv
+__pycache__/
+build/
+dist/
