@@ -11,26 +11,30 @@ import pandas as pd
 import sys
 sys.path.append('/home/hsher/projects/Metadensity')
 from metadensity.metadensity import *
-
+from config import settings
 #################### generate axis ###################################
+featnames = ['exon', 'intron']
+ax_width_dict = settings.ax_width_dict
+feat_len_dict = settings.feat_len
 
-ax_width_dict = {'utr':1,
-                'exon':2,
-                'intron':3,
-                'CDS':2}
-feat_len_dict = {'five_utr':100, 
-                 'three_utr':150, 
-                 'intron': 1500, 
-                 'exon':150, 
-                 'CDS':150}
+
 def calcaulte_grid_width(features_to_show, ax_width_dict):
     ''' calculate the number of grid needed for gridspec '''
     n_exon = len([f for f in features_to_show if 'exon' in f])
     n_cds = len([f for f in features_to_show if 'CDS' in f])
     n_utr = len([f for f in features_to_show if 'utr' in f])
     n_intron = len([f for f in features_to_show if 'intron' in f])
+    n_duplex = len([f for f in features_to_show if 'duplex' in f])
+    n_mature = len([f for f in features_to_show if 'mature' in f])
+    n_hairpin = len([f for f in features_to_show if 'hairpin' in f])
 
-    width = (ax_width_dict['utr']*n_utr + ax_width_dict['exon']*n_exon + ax_width_dict['intron']*n_intron + ax_width_dict['CDS']*n_cds)*2
+    width = (ax_width_dict['utr']*n_utr + 
+    ax_width_dict['exon']*n_exon + 
+    ax_width_dict['intron']*n_intron + 
+    ax_width_dict['CDS']*n_cds+
+    ax_width_dict['duplex']*n_duplex+
+    ax_width_dict['mature']*n_mature+
+    ax_width_dict['hairpin']*n_hairpin)*2
     return width
 
 
@@ -55,7 +59,7 @@ def generate_axis(nrows = 2, ax_width_dict = ax_width_dict, color_bar = False, f
         for feat in features_to_show:
             for align in ['left', 'right']:
                 width = ax_width_dict[feat.split('_')[-1]]
-                flen = feat_len_dict[feat.replace('first_','').replace('last_','')]
+                flen = feat_len_dict[feat]
                 
                 
                 ## left y-axis
@@ -118,9 +122,9 @@ def gaussian_smooth(mean, sigma = 5):
     return smoothed_vals
     
 
-
-def plot_rbp_map(metas, quantile = False,  scaled = False, truncation = False, alpha = 0.6, ymax = 0.003, features_to_show = featnames):
-    ''' get a bunch of eCLIPs, plot their individual density in a heatmap'''
+################################## real plotting functions start here #############################################
+def plot_rbp_map(metas, alpha = 0.6, ymax = 0.003, features_to_show = featnames, sort = False, rep_handle = 'combined'):
+    ''' get a bunch of Metadensity or Metatruncation Object, plot their individual density in a heatmap'''
     fig, ax_dict = generate_axis(nrows = len(metas), color_bar = True, features_to_show = features_to_show)
     
     # set ylabel
@@ -130,123 +134,49 @@ def plot_rbp_map(metas, quantile = False,  scaled = False, truncation = False, a
    
     for m, rep in zip(metas, ['rep{}'.format(i) for i in range(1, len(metas)+1)]):
         i=0
-        if quantile:
-            den_arr = m.qdensity_array
-        if truncation:
+        
+        # autodetect object type
+        if isinstance(m, Metatruncate):
             den_arr = m.truncate_array
-        else:
+        elif isinstance(m, Metadensity):
             den_arr = m.density_array
-        if scaled:
-            den_arr = m.scaled_density_array
+        else:
+            print('Feeding wrong object {}. Only accept Metadensity or Metatruncate'.format(type(m)))
+        
+        # plotting features
         for feat in features_to_show:
             for align in ['left', 'right']:
                 # extract density
-                density_concat = np.concatenate([den_arr[feat,align, r] for r in m.eCLIP.rep_keys], axis = 0)
+                if rep_handle == 'combined':
+                    # mean of all reps
+                    density_concat = np.nanmean(np.stack([den_arr[feat,align, r] for r in m.eCLIP.rep_keys]), axis = 0)
+                elif rep_handle == 'all':
+                    # plot each rep individually
+                    density_concat = np.concatenate([den_arr[feat,align, r] for r in m.eCLIP.rep_keys], axis = 0)
+                else:
+                    # specific rep
+                    density_concat = den_arr[feat,align, rep_handle]
+                
                 # sort lexicographically for better visualization
-                #density_concat = density_concat[np.lexsort(np.rot90(density_concat))]
+                if sort:
+                    density_concat = density_concat[np.lexsort(np.rot90(density_concat))]
                 
+                # find axis and plot
                 ax = ax_dict[feat, align, rep]
-                
-                
                 sns.heatmap(density_concat, ax = ax, cbar_ax = ax_dict['colorbar'], vmin = 0, vmax = ymax, cmap="YlGnBu")
                 
-                if align == 'left' and feat == 'five_utr':
-                    
+                if align == 'left' and feat == features_to_show[0]:    
                     ax.set_ylabel(m.name)
                     
                 i+= 1
-    
-    
-    if quantile:
-        t = 'Quantile Metadensity'
-    elif scaled:
-        t = 'Scaled Metadensity'
-    elif truncation:
-        t = 'truncation density'
-    else:
-        t = 'Normalized Metadensity'
-    
-    plt.suptitle(t)
+    plt.suptitle('RBP map: individual transcript')
+    return fig
 
 
 
-def plot_density(eCLIP, 
-                 five_utr_len=100, three_utr_len=150, intron_len = 1500, exon_len = 150, 
-                 ymax = 0.03, logy = False, example = 'positive', quantile = False,scaled = False,
-                alpha = 0.5):
-    ''' plot eCLIP.density_array or eCLIP.qdensity_array individual level'''
-    
-    fig, ax_dict = generate_axis(nrows = 2)
-    
-    # density
-    if quantile:
-        eCLIP_den = eCLIP.qdensity_array
-        title = 'Quantile Density'
-    if scaled:
-        eCLIP_den = eCLIP.scaled_density_array
-        title = 'Scaled Density'
-    else:
-        eCLIP_den = eCLIP.density_array
-        title = 'Normalized Density'
-    
-    
-    # set xlim for exon, intron, utr's maximal length
-    _ = [ax_dict[key].set_xlim(xmin = 0, xmax = three_utr_len) for key in ax_dict.keys() if 'three_utr' in key]
-    _ = [ax_dict[key].set_xlim(xmin = 0, xmax = five_utr_len) for key in ax_dict.keys() if 'five_utr' in key]
-    _ = [ax_dict[key].set_xlim(xmin = 0, xmax = exon_len) for key in ax_dict.keys() if 'exon' in key]
-    _ = [ax_dict[key].set_xlim(xmin = 0, xmax = intron_len) for key in ax_dict.keys() if 'intron' in key]
-    
-    
-    # set ylim for peak height
-    _ = [ax_dict[key].set_ylim(ymin = 0, ymax = ymax) for key in ax_dict.keys() if 'five_utr' in key]
-    _ = [ax_dict[key].set_ylabel(title) for key in ax_dict.keys() if 'five_utr' in key and 'left' in key]
-    if logy:
-        _ = [ax_dict[key].set_yscale('log') for key in ax_dict.keys() if 'five_utr' in key]
-    
-    
-    for key in ax_dict.keys():
-        eCLIP_key = tuple([example] + list(key))
-        ax_dict[key].plot(eCLIP_den[eCLIP_key].T, alpha = alpha, color = 'indianred')
-        
-        
-    plt.suptitle('{} {} : {} examples'.format(title, eCLIP.name,example))
-
-def plot_prob(eCLIP, eCLIP_prob, example):
-    '''plot prob distribution'''
-    fig, ax_dict = generate_axis(nrows = 2, color_bar = True)
-    
-    # cm
-    cm = sns.cubehelix_palette(50, hue=0.05, rot=0, light=0.9, dark=0, as_cmap = True)
-    vmax = np.log(1)
-    vmin = np.log(0.001)
-    
-    
-    
-    for keys in eCLIP_prob.keys():
-        if example in keys:
-            ax = ax_dict[keys[1:]]
-            prob = eCLIP_prob[keys]
-            if 'three_utr' in keys and 'rep2' in keys:
-                sns.heatmap(np.log(prob[1:, :]), cmap=cm, ax = ax, cbar_ax = ax_dict['colorbar'], vmin = vmin, vmax = vmax) 
-            else:
-                sns.heatmap(np.log(prob[1:, :]), cmap=cm, ax = ax, cbar = False, vmin = vmin, vmax = vmax) 
-                bins = prob.shape[0]
-    
-    # set label\n",
-    ax_dict['colorbar'].set_ylabel('log probability')
-    _ = [ax_dict[keys].set_ylabel('density bins') for keys in ax_dict.keys() if 'five_utr' in keys and 'left' in keys]
-   
-    _ = [ax_dict[keys].invert_yaxis() for keys in ax_dict.keys() if 'five_utr' in keys and 'left' in keys]      
-    _ = [ax_dict[keys].set_yticklabels(np.arange(1,bins)) for keys in ax_dict.keys() if 'five_utr' in keys]
-        
-        
-        
-    
-    
-    plt.suptitle('{}: {} example'.format(eCLIP.name, example))
 
 # show that std is large
-def plot_mean_density(metas, ymax = 0.003, quantile = False, truncation = False, scaled = False, alpha = 0.3, plot_std = True, stat = 'mean', features_to_show = featnames, smooth = False):
+def plot_mean_density(metas, ymax = 0.003, quantile = False, truncation = False, scaled = False, alpha = 0.3, plot_std = True, stat = 'mean', features_to_show = featnames, smooth = False, color_dict = None):
     ''' get a bunch of eCLIPs, plot their mean density'''
     fig, ax_dict = generate_axis(nrows = 1,  features_to_show = features_to_show)
     
@@ -254,22 +184,28 @@ def plot_mean_density(metas, ymax = 0.003, quantile = False, truncation = False,
     
     # set ylabel
     
-    _ = [ax_dict[key].set_ylabel(stat + ' density') for key in ax_dict.keys() if 'five_utr' in key and 'left' in key]
-    _ = [ax_dict[key].set_ylim(ymax = ymax, ymin = 0) for key in ax_dict.keys() if 'five_utr' in key]
+    #_ = [ax_dict[key].set_ylabel(stat + ' density') for key in ax_dict.keys() if features_to_show[0] in key and 'left' in key]
+    _ = [ax_dict[key].set_ylim(ymax = ymax, ymin = 0) for key in ax_dict.keys() if features_to_show[0] in key]
     
     for m in metas:
         i=0
-        if quantile:
-            den_arr = m.qdensity_array
-        elif truncation:
+        if isinstance(m, Metatruncate):
             den_arr = m.truncate_array
-        else:
+        elif isinstance(m, Metadensity):
             den_arr = m.density_array
-        if scaled:
-            den_arr = m.scaled_density_array
+        else:
+            print('Feeding wrong object {}. Only accept Metadensity or Metatruncate'.format(type(m)))
+
         for feat in features_to_show:
             for align in ['left', 'right']:
                 density_concat = np.concatenate([den_arr[feat,align, r] for r in m.eCLIP.rep_keys], axis = 0)
+                flen = feat_len_dict[feat]
+                if align == 'left':
+                    density_concat = density_concat[:, :flen]
+                else:
+                    density_concat = density_concat[:, -flen:]
+
+
                 if stat == 'mean':
                     md = np.nanmean(density_concat, axis = 0)
                 if stat == 'median':
@@ -284,170 +220,43 @@ def plot_mean_density(metas, ymax = 0.003, quantile = False, truncation = False,
                 
 
                 if smooth:
-                    ax.plot(gaussian_smooth(md), label = m.name)
+                    if color_dict:
+                        ax.plot(gaussian_smooth(md), label = m.name, color = color_dict[m.name])
+                    else:
+                        ax.plot(gaussian_smooth(md), label = m.name)
                 else:
-                    ax.plot(md, label = m.name)
+                    if color_dict:
+                        ax.plot(md, label = m.name, color = color_dict[m.name])
+                    else:
+                        ax.plot(md, label = m.name)
+                    
                     if plot_std:
-                        ax.fill_between(np.arange(len(md)), md-sem, md+sem, label = m.name, alpha = alpha)
+                        if color_dict:
+                            ax.fill_between(np.arange(len(md)), md-sem, md+sem, label = m.name, alpha = alpha, color = color_dict[m.name])
+                        else:
+                            ax.fill_between(np.arange(len(md)), md-sem, md+sem, label = m.name, alpha = alpha)
+                
+                if align == 'left' and feat == features_to_show[0]:
+                    if m.background_method == 'relative information':
+                        ylbl = '{} relative information'.format(stat)
+                    elif m.background_method == None:
+                        ylbl = '{} IP'.format(stat)
+                    else:
+                        ylbl = '{} subtracted '.format(stat)
+                    
+                    if m.normalize:
+                        ylbl += ' normalized density'
+                    else:
+                        ylbl += ' raw'
+                    ax.set_ylabel(ylbl)
                 
                 
                     
                 i+= 1
-    plt.legend(bbox_to_anchor = (1.5, 0.5))
+    plt.legend(bbox_to_anchor = (1.5, 1))
     
-    if quantile:
-        t = 'Quantile Metadensity'
-    elif truncation:
-        t = 'Truncation Density'
-    elif scaled:
-        t = 'Scaled Metadensity'
-    else:
-        t = 'Normalized Metadensity'
-    title = t
-    plt.suptitle(title)
+    
+    plt.suptitle('Pooled Density from Many Transcript')
+    return fig
     
 
-def plot_one_density(eCLIP, transcript_index,
-                 five_utr_len=100, three_utr_len=150, intron_len = 1500, exon_len = 150, 
-                 ymax = 0.03, logy = False, example = 'positive', quantile = False,
-                alpha = 0.5):
-    ''' plot eCLIP.density_array or eCLIP.qdensity_array for only 1 transcript'''
-    
-    fig, ax_dict = generate_axis(nrows = 2)
-    
-    # set xlim for exon, intron, utr's maximal length
-    _ = [ax_dict[key].set_xlim(xmin = 0, xmax = three_utr_len) for key in ax_dict.keys() if 'three_utr' in key]
-    _ = [ax_dict[key].set_xlim(xmin = 0, xmax = five_utr_len) for key in ax_dict.keys() if 'five_utr' in key]
-    _ = [ax_dict[key].set_xlim(xmin = 0, xmax = exon_len) for key in ax_dict.keys() if 'exon' in key]
-    _ = [ax_dict[key].set_xlim(xmin = 0, xmax = intron_len) for key in ax_dict.keys() if 'intron' in key]
-    
-    
-    # set ylim for peak height
-    _ = [ax_dict[key].set_ylim(ymin = 0, ymax = ymax) for key in ax_dict.keys() if 'five_utr' in key]
-    _ = [ax_dict[key].set_ylabel('Normalized density') for key in ax_dict.keys() if 'five_utr' in key and 'left' in key]
-    if logy:
-        _ = [ax_dict[key].set_yscale('log') for key in ax_dict.keys() if 'five_utr' in key]
-    
-    # density
-    if quantile:
-        eCLIP_den = eCLIP.qdensity_array
-    else:
-        eCLIP_den = eCLIP.density_array
-    for key in ax_dict.keys():
-        eCLIP_key = tuple([example] + list(key))
-        ax_dict[key].plot(eCLIP_den[eCLIP_key].T[transcript_index,:], alpha = alpha, color = 'indianred')
-        
-        
-    plt.suptitle('Normalized density {} : {} examples'.format(eCLIP.name,example))
-
-################################# Plots for consistency between probability, mean or median #############################
-## consistency by scatter plot
-colors = dict(zip(featnames, ['maroon','royalblue', 'navy', 'seagreen', 'lightskyblue', 'tomato', 'darkviolet', 'indigo', 'mediumpurple']))
-
-def prob_consistency(eclip_prob, name, quantile = False):
-    ''' plot consistency for eclip_prob '''
-    
-    if quantile:
-        ncol = 1
-        examples = ['positive']
-    else:
-        ncol = 2
-        examples = ['positive','negative']
-        
-    f,ax = plt.subplots(1,ncol)
-    
-    if quantile:
-        ax = [ax]
-    
-    i = 0
-    for e in examples:
-        for f in ['five_utr', 'exon', 'intron', 'three_utr']:
-            for a in ['left', 'right']:
-                ax[i].scatter(eclip_prob[e, f, a, 'rep1'].ravel(), eclip_prob[e, f, a, 'rep2'].ravel(), color = colors[f], label = f, alpha = 0.6, marker = '+')
-        
-        ax[i].set_xlabel('rep1 prob')
-        ax[i].set_ylabel('rep2 prob')
-        ax[i].set_title(e)
-        i+=1
-    plt.suptitle('probability distribution consistency: {}'.format(name))
-    plt.tight_layout()
-    plt.legend(loc = 'right', bbox_to_anchor = [1.5, 0.5])
-    #plt.yscale('log')
-    #plt.xscale('log')
-
-def mean_density(eCLIP, use_quantile = False, use_scaled = False):
-    ''' get mean and median, stderr density '''
-    mean = {}
-    median = {}
-    stderr = {}
-    
-    if use_quantile:
-        den_array = eCLIP.qdensity_array
-    elif use_scaled:
-        den_array = eCLIP.scaled_density_array
-    else:
-        den_array = eCLIP.density_array
-    
-    for key in den_array.keys():
-        median[key] = np.nanmedian(den_array[key], axis = 0)
-        mean[key] = np.nanmean(den_array[key], axis = 0)
-        n = den_array[key].shape[0]
-        stderr[key] = np.nanstd(den_array[key], axis = 0)/np.sqrt(n)
-    return mean, median, stderr
-
-def mean_med_consistency(meta, use_quantile = False, use_scaled = False, ymax = 0.002):
-    ''' plot the consistency of mean and median for density array'''
-    
-    nrow = 1   
-    
-    f, ax = plt.subplots(nrow,2, figsize = (6,nrow*3) , sharex = True, sharey = True)
-    ax = ax.flatten()
-    mean, median, stderr = mean_density(meta, use_quantile = use_quantile, use_scaled = use_scaled)
-    i = 0
-    
-    for f in featnames:
-        for a in ['left', 'right']:
-                
-            ax[i].scatter(mean[f, a, 'rep1'], mean[f, a, 'm.eCLIP.rep_keys()'], label = f, color = colors[f], marker = '+', alpha = 0.6)
-            ax[i].set_title('mean')
-            ax[i].set_xlim((0,ymax))
-            ax[i].set_ylim((0,ymax))
-            ax[i].set_xlabel('rep1')
-            ax[i].set_ylabel('rep2')
-                
-                
-            ax[i+1].scatter(median[f, a, 'rep1'], mean[f, a, 'rep2'], label = f ,color = colors[f], marker = '+', alpha = 0.6)
-            ax[i+1].set_title('median')
-            ax[i+1].set_xlim((0,ymax))
-            ax[i+1].set_ylim((0,ymax))
-            ax[i+1].set_xlabel('rep1')
-        
-    plt.legend(bbox_to_anchor = (2, 1))
-    plt.suptitle('Reproducibility {}'.format(meta.name))
-    
-    
-    
-########################################### entropy based #######################################################
-def plot_entropy(eCLIPs, eCLIP_probs):
-    ''' get a bunch of eCLIPs, plot their mean density'''
-    fig, ax_dict = generate_axis(nrows = 1)
-    # set ylabel
-    _ = [ax_dict[key].set_ylabel('relative entropy') for key in ax_dict.keys() if 'five_utr' in key and 'left' in key]
-    
-    
-    for eCLIP, prob in zip(eCLIPs, eCLIP_probs):
-        
-        for feat in featnames:
-            for align in ['left', 'right']:
-                pos = np.mean(np.array([prob['positive', feat,align, r] for r in ['rep1', 'rep2']]), axis = 0)
-                neg = np.mean(np.array([prob['negative', feat,align, r] for r in ['rep1', 'rep2']]), axis = 0)
-                entro = density_array_entropy(pos, neg)
-                ax_dict[feat, align, 'rep1'].plot(entro, label = eCLIP.name, alpha = 0.5)
-                
-                
-    plt.legend()
-    plt.suptitle('relative entropy: positive v.s. negative')
-    
-                
-    
-    
