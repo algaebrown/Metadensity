@@ -9,9 +9,8 @@ import seaborn as sns
 import numpy as np
 import pandas as pd
 import sys
-sys.path.append('/home/hsher/projects/Metadensity')
-from metadensity.metadensity import *
-from config import settings
+from .metadensity import *
+from . import settings
 #################### generate axis ###################################
 featnames = ['exon', 'intron']
 ax_width_dict = settings.ax_width_dict
@@ -22,19 +21,22 @@ def calcaulte_grid_width(features_to_show, ax_width_dict):
     ''' calculate the number of grid needed for gridspec '''
     n_exon = len([f for f in features_to_show if 'exon' in f])
     n_cds = len([f for f in features_to_show if 'CDS' in f])
-    n_utr = len([f for f in features_to_show if 'utr' in f])
+    n_UTR = len([f for f in features_to_show if 'UTR' in f])
     n_intron = len([f for f in features_to_show if 'intron' in f])
     n_duplex = len([f for f in features_to_show if 'duplex' in f])
     n_mature = len([f for f in features_to_show if 'mature' in f])
     n_hairpin = len([f for f in features_to_show if 'hairpin' in f])
+    n_br = len([f for f in features_to_show if 'branchpoint' in f])
 
-    width = (ax_width_dict['utr']*n_utr + 
+    width = (ax_width_dict['UTR']*n_UTR + 
     ax_width_dict['exon']*n_exon + 
     ax_width_dict['intron']*n_intron + 
     ax_width_dict['CDS']*n_cds+
     ax_width_dict['duplex']*n_duplex+
     ax_width_dict['mature']*n_mature+
-    ax_width_dict['hairpin']*n_hairpin)*2
+    ax_width_dict['hairpin']*n_hairpin+
+    ax_width_dict['branchpoint']*n_br
+    )*2
     return width
 
 
@@ -58,7 +60,10 @@ def generate_axis(nrows = 2, ax_width_dict = ax_width_dict, color_bar = False, f
         current = 0
         for feat in features_to_show:
             for align in ['left', 'right']:
-                width = ax_width_dict[feat.split('_')[-1]]
+                if feat == 'branchpoint_pred':
+                    width = ax_width_dict['branchpoint']
+                else:
+                    width = ax_width_dict[feat.split('_')[-1]]
                 flen = feat_len_dict[feat]
                 
                 
@@ -83,7 +88,7 @@ def generate_axis(nrows = 2, ax_width_dict = ax_width_dict, color_bar = False, f
                     ax_dict[feat, align, 'rep{}'.format(r+1)].set_xticks(np.arange(0, flen+1, flen/5))
                     xticklabel = ['{:.0f}'.format(x) for x in np.arange(-flen, 1, flen/5)]
                     
-                    if feat == 'three_utr':
+                    if feat == 'three_prime_UTR':
                         xticklabel[-1] = 'TTS'
                     if feat == 'intron':
                         xticklabel[-1] = '3\' SS'
@@ -93,7 +98,7 @@ def generate_axis(nrows = 2, ax_width_dict = ax_width_dict, color_bar = False, f
                 else:
                     ax_dict[feat, align, 'rep{}'.format(r+1)].set_xticks(np.arange(0, flen, flen/5))
                     xticklabel = ['{:.0f}'.format(x) for x in np.arange(0,flen, flen/5)]
-                    if feat == 'five_utr':
+                    if feat == 'five_prime_UTR':
                         xticklabel[0] = 'TSS'
                     if feat == 'intron':
                         xticklabel[0] = '5\' SS'
@@ -108,22 +113,11 @@ def generate_axis(nrows = 2, ax_width_dict = ax_width_dict, color_bar = False, f
         ax_dict['colorbar'] = fig.add_subplot(spec[:,-1:])
     return fig, ax_dict
 
-####################### smoothing #######################################
-def gaussian_smooth(mean, sigma = 5):
-    ''' use gaussian kernel to smooth spiky data, sigma = stf '''
-    y_vals = mean
-    x_vals = np.arange(len(mean))
-    
-    smoothed_vals = np.zeros(y_vals.shape)
-    for x_position in x_vals:
-        kernel = np.exp(-(x_vals - x_position) ** 2 / (2 * sigma ** 2))
-        kernel = kernel / sum(kernel)
-        smoothed_vals[x_position] = sum(y_vals * kernel)
-    return smoothed_vals
+
     
 
 ################################## real plotting functions start here #############################################
-def plot_rbp_map(metas, alpha = 0.6, ymax = 0.003, features_to_show = featnames, sort = False, rep_handle = 'combined'):
+def plot_rbp_map(metas, alpha = 0.6, ymax = 0.001, features_to_show = featnames, sort = False, rep_handle = 'combined'):
     ''' get a bunch of Metadensity or Metatruncation Object, plot their individual density in a heatmap'''
     fig, ax_dict = generate_axis(nrows = len(metas), color_bar = True, features_to_show = features_to_show)
     
@@ -176,7 +170,7 @@ def plot_rbp_map(metas, alpha = 0.6, ymax = 0.003, features_to_show = featnames,
 
 
 # show that std is large
-def plot_mean_density(metas, ymax = 0.003, quantile = False, truncation = False, scaled = False, alpha = 0.3, plot_std = True, stat = 'mean', features_to_show = featnames, smooth = False, color_dict = None):
+def plot_mean_density(metas, ymax = 0.001, quantile = False, truncation = False, scaled = False, alpha = 0.3, plot_std = True, stat = 'mean', features_to_show = featnames, smooth = False, color_dict = None):
     ''' get a bunch of eCLIPs, plot their mean density'''
     fig, ax_dict = generate_axis(nrows = 1,  features_to_show = features_to_show)
     
