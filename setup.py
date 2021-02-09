@@ -1,6 +1,7 @@
 from setuptools import setup
 from setuptools import find_packages
 
+
 long_description = "Metadensity - Metagene plot using CLIP-seq and STAMP, for RNAs"
 
 setup(
@@ -9,9 +10,9 @@ setup(
     version = "0.0.1",
     packages = find_packages(),
     
-
+    package_dir = {'metadensity': 'metadensity'},
     package_data = {
-        'metadensity' : ['data/*']
+        'metadensity' : ['data/*/*']
         },
 
     install_requires = ['setuptools', 
