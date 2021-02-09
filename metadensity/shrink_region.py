@@ -5,8 +5,8 @@ Created on Jul 28, 2020
 
 import sys
 
-from truncation import *
-from sequence import *
+from .truncation import *
+from .sequence import *
 import matplotlib.pyplot as plt
 from collections import Counter
 from optparse import OptionParser
