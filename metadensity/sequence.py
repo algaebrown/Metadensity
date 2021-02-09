@@ -4,6 +4,8 @@ from Bio.Seq import Seq
 from collections import Counter
 import pandas as pd
 import matplotlib.pyplot as plt
+import random
+import math
 
 # human genome here
 genome='/home/hsher/gencode_coords/GRCh38.p13.genome.fa'
@@ -109,4 +111,27 @@ def enrich_plot(stat, motif, r_thres = 2, freq_thres = 0.125, ax = None):
         mo.plot(kind = 'scatter', x = 'R value', y = 'ip_frequency', color = 'tomato', ax = ax)
         for index, row in mo.iterrows():
             ax.text(row['R value'], row['ip_frequency'], index, color = 'tomato')
+
+####################################### k-mer Z-score ######################################    
+def simulate_kmer_background(input_seq, k = 7, n_iter = 100, n_sample = 1000):
+    ''' from input sequence, sample a many times, calculate mean and std for each kmer)'''
+    dist_df = pd.DataFrame()
+    if len(input_seq) < n_sample:
+        n_sample = math.ceil(len(input_seq)/3)
+    print('sampling {} sequences from {} for {} times'.format(n_sample, len(input_seq), n_iter))
+    for i in range(n_iter):
+        kmer_count = count_kmer(random.sample(input_seq, n_sample), k = k)
+        dist_df = dist_df.append(kmer_count, ignore_index = True)
+    dist_df = dist_df/n_sample # frequency
+    dist_df.fillna(0, inplace = True)
+
+    return(dist_df.mean(axis = 0), dist_df.std(axis = 0))
+
+def kmer_zscore(ip_seqs, mean, std, k = 7):
+    ''' return z score for each k-mer based on control k-mer distribution'''
     
+    kmer_freq = pd.Series(count_kmer(ip_seqs, k = k))/len(ip_seqs)
+    kmer_freq=kmer_freq[list(set(mean.index).intersection(kmer_freq.index))]
+    
+    # get z score
+    return (kmer_freq - mean[kmer_freq.index]).div(std[kmer_freq.index])

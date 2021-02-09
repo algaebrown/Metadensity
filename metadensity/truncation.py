@@ -1,7 +1,7 @@
 from pybedtools import BedTool
 import pysam
 
-
+from collections import Counter
 import numpy as np
 from scipy.stats import expon, binom
 from sklearn.cluster import DBSCAN
@@ -9,7 +9,7 @@ import pandas as pd
 import math
 import sys
 
-from sequence import *
+from .sequence import *
 
 
 # fetch read start
@@ -46,7 +46,28 @@ def read_start_sites(bam_fileobj, interval = None, chrom = None, start = None, e
             else:
                 sites = [s.reference_end for s in subset_reads if s.is_reverse]
     return sites
-
+def truncation_relative_axis(bam_fileobj, interval = None, chrom = None, start = None, end = None, strand = None, single_end = False):
+    '''
+    return truncation count for each position at each site (5' to 3')
+    '''
+    if chrom:
+        sites = read_start_sites(bam_fileobj, chrom=chrom, start=start, end=end, strand=strand, single_end = single_end)
+    else:
+        sites = read_start_sites(bam_fileobj, interval=interval, single_end = single_end)
+        start = interval.start
+        end = interval.end
+        strand = interval.strand
+        
+    site_count = Counter(sites)
+        
+    pos_count = []
+    if strand == '+':
+        for pos in range(start, end+1):
+            pos_count.append(site_count[pos])
+    if strand == '-':
+        for pos in range(end, start-1, -1): # 15, 14, 13, 12, 11, 10
+            pos_count.append(site_count[pos])
+    return np.array(pos_count)  
 ########################### read start clustering #######################################
 class Cluster:
     ''' Read start Cluster'''
