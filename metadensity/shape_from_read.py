@@ -85,7 +85,7 @@ def ks_all_pos(w, w_in, p_thres = 0.01):
     for pos in range(w.shape[1]):
         
         # if ip is larger than in
-        ks_large, pval_large = ks_2samp(w[:, pos], w_in[:, pos], alternative = 'lesser')
+        ks_large, pval_large = ks_2samp(w[:, pos], w_in[:, pos], alternative = 'less')
         
         # if ip is smaller than in
         ks_small, pval_small = ks_2samp(w[:, pos], w_in[:, pos], alternative = 'greater')
