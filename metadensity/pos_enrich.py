@@ -17,18 +17,28 @@ def highly_exp_biogps(cell_line = 'HEPG2', transcript_type = 'protein_coding', s
 
     return cds_metagenes
 
-def construct_distribution(e, metagenes):
+def construct_distribution(e, metagenes, use_truncate = True):
     ''' Given eCLIP object, construct null and IP density '''
 
     ############# NULL ####################
-    m_null=Metatruncate(e, e.name+'_null', metagenes = metagenes, background_method = 'get null', normalize = True, smooth = False)
-    m_null.get_density_array(use_truncation = True)
-    print('Done constructing an empirical null distribution from Input')
+    if use_truncate:
+        m_null=Metatruncate(e, e.name+'_null', metagenes = metagenes, background_method = 'get null', normalize = True, smooth = False)
+        m_null.get_density_array(use_truncation = True)
+        print('Done constructing an empirical null distribution from Input')
 
-    ############# IP ######################
-    m_ip=Metatruncate(e, e.name+'_real', metagenes = metagenes, background_method = None, normalize = True, smooth = False)
-    m_ip.get_density_array(use_truncation = True)
-    print('Done constructing IP distribution')
+        ############# IP ######################
+        m_ip=Metatruncate(e, e.name+'_real', metagenes = metagenes, background_method = None, normalize = True, smooth = False)
+        m_ip.get_density_array(use_truncation = True)
+        print('Done constructing IP distribution')
+    else:
+        m_null=Metadensity(e, e.name+'_null', metagenes = metagenes, background_method = 'get null', normalize = True, smooth = False)
+        m_null.get_density_array()
+        print('Done constructing an empirical null distribution from Input')
+
+        ############# IP ######################
+        m_ip=Metadensity(e, e.name+'_real', metagenes = metagenes, background_method = None, normalize = True, smooth = False)
+        m_ip.get_density_array()
+        print('Done constructing IP distribution')
 
     return m_null, m_ip
 ############################# wilcox test method ##########################################
