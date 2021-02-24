@@ -82,7 +82,13 @@ def ks_all_pos(w, w_in, p_thres = 0.01):
     ''' run KS test for all position '''
     ps = []
     kss = []
+    # remove np.nan before testing
+    w = np.ma.array(w, mask=np.isnan(w)) 
+    w_in = np.ma.array(w_in, mask=np.isnan(w_in)) 
     for pos in range(w.shape[1]):
+
+        
+
         
         # if ip is larger than in
         ks_large, pval_large = ks_2samp(w[:, pos], w_in[:, pos], alternative = 'less')
