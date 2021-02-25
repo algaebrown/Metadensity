@@ -5,9 +5,13 @@ Visualize eCLIP/STAMP metagene density to predict RNA binding protein function
 ```
 git clone https://github.com/algaebrown/Metadensity.git
 cd Metadensity
+# build your own environment!
 conda create -n Metadensity
 conda activate Metadensity
-python setup.py install
+# copy genome coordinate
+cd metadensity
+cp /home/hsher/Metadensity/metadensity/data . # only work in TSCC
+python setup.py install # install
 ```
 
 # Four simple steps to create your density
@@ -18,16 +22,8 @@ python setup.py install
 
 
 # Genomic Coordinate?
-Default is Gencode.v33. You can generate your custom corrdinate with [this script](https://github.com/algaebrown/ClipNet/blob/master/scripts/gencode_canon_filtering.sh)
-
-It filters for known canonical transcripts. To download it visit [UCSC table broswer](https://genome.ucsc.edu/cgi-bin/hgTables)
-Download the comprehensive gene annotation gff3 [here in gencode](Comprehensive gene annotation)
-
-Of course you can decide not to filter for known canonical transcripts.
-But it will result in lots of overlapping transcript. You might see a bunch of metagene density that look the same (since they come from the same region essentially)
-
-To point to your custom genome coordinate files visit the example notebook:[here](https://github.com/algaebrown/Metadensity/blob/master/example%20analysis/Oncogenic%20pathways.ipynb)
+Currently the genome coordinates are available at `ls /home/hsher/Metadensity/metadensity/data` with only hg19, hg38 and mm10.
 
 # Example Notebooks
 [here](https://github.com/algaebrown/Metadensity/tree/master/example%20analysis)
-and [here](https://github.com/algaebrown/Metadensity/blob/master/notebooks/1_Normalized%20Metadensity.ipynb)
+
