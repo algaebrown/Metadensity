@@ -1,7 +1,7 @@
-'''
-Created on Jul 28, 2020
-@author: Hsuan-lin Her
-'''
+#'''
+#Created on Jul 28, 2020
+#@author: Hsuan-lin Her
+#'''
 
 import sys
 
@@ -14,17 +14,170 @@ from multiprocessing import Pool
 import pandas as pd
 from pybedtools import BedTool
 import pysam
+import math
+########################### read start clustering #######################################
+class Cluster:
+    ''' Read start Cluster'''
+    def __init__(self,chrom, start, end, strand, ip_site, input_site):
+        self.chrom = chrom
+        self.start = start
+        self.end = end
+        self.strand = strand
+        
+        
+        self.ip_site = ip_site
+        self.input_site = input_site
+        self.no_ip = len(ip_site)
+        self.no_input = len(input_site)
+        
+        self.score = None
+        self.seq = ''
+    def make_fixed_size(self, size = 30):
+        ''' make cluster fixed sized '''
+        if self.end-self.start > size:
+            print('Warning: cluster size is {}'.format(self.end-self.start))
+        
+        center = math.ceil((self.start + self.end)/2)
+        self.start = center - math.ceil(size/2)
+        self.end = self.start + size
 
-def get_cluster_seq(clusters, window = 10):
-    ''' find cluster sequence with window'''
+    def enrich_score(self, total_ip_in_region, total_input_in_region):
+        ''' calculate enrichment score by binom'''
+    
+        
+        # probability of success
+        p = (total_ip_in_region+1)/(total_ip_in_region + total_input_in_region+2)
+    
+        
+        # binom
+        total_cluster = self.no_ip + self.no_input
+    
+        bn = binom(total_cluster, p)
+        prob = bn.cdf(self.no_ip)
+        self.score = prob
+        
+        # pseudocount
+        
+        bn = binom(total_cluster+2, p)
+        prob = bn.cdf(self.no_ip+1)
+        self.pseudoscore = prob
+        
+        print(total_ip_in_region, self.no_ip, total_input_in_region, self.no_input, prob)
+    
+    
+    def to_bedstr(self):
+        ''' convert to bedtool compatible string format'''
+        bedstr = '{} {} {} {} {} {} {} {}\n'.format(self.chrom, self.start, self.end,0,'.',self.strand, '.', '.')
+        return bedstr
+
+
+def find_cluster(interval, bam_fileobj, inputbam_fileobj, combine = False, eps = 2, min_samples = 2, size = 30):
+    ''' find read start cluster using DBSCAN
+    interval: BedTool interval
+    bam_fileobj: pysam IP bam
+    inputbam_fileobj: pysam Input bam
+    combine: if True, create cluster using both IP and Input reads; better for compare to Input.
+    eps, min_samples: DBSCAN param
+    '''
+    # fetch read starts
+    sites = read_start_sites(bam_fileobj, interval = interval)
+    input_sites = read_start_sites(inputbam_fileobj, interval = interval)
+    
+    total_ip_in_region = len(sites)
+    total_input_in_region = len(input_sites)
+    
+    if total_ip_in_region == 0:
+        # sometimes even region is enriched in coverage, it might contain no 5' sites at all
+        #print('site length: {}, input length: {}'.format(len(sites), len(input_sites)))
+        return [], input_sites, sites
+
+    # convert to numpy array
+    if combine:
+        X = np.array(sites + input_sites).reshape(1, -1).T
+        identity = np.array(['IP']*len(sites) + ['Input']*len(input_sites)) # remember where each data point comes from
+    else:
+        X = np.array(sites).reshape(1, -1).T
+        identity = np.array(['IP']*len(sites))# remember where each data point comes from
+
+    # run DBSCAN
+    clustering = DBSCAN(eps=eps, min_samples=min_samples).fit(X) #TODO epi and min_samples needs to be tuned
+
+    # convert to Cluster Object
+    
+    # not all belong to a cluster
+    lbl=clustering.labels_[clustering.core_sample_indices_] # labels
+    pos=X.flatten()[clustering.core_sample_indices_] # positions
+    identity = identity[clustering.core_sample_indices_] # IP or Input
+    
+    d=pd.DataFrame([lbl, pos, identity], index = ['label', 'position', 'identity']).T
+    dmax = d.groupby('label')['position'].max().values.flatten().tolist()
+    dmin = d.groupby('label')['position'].min().values.flatten().tolist()
+    
+    # TODO: break down gigantic cluster
+    ip_members = [g[1].loc[g[1]['identity'] == 'IP', 'position'].tolist() for g in d.groupby('label')]
+    input_members = [g[1].loc[g[1]['identity'] == 'Input', 'position'].tolist() for g in d.groupby('label')]
+
+    clusters = []
+    for start, end, ip_site, input_site in zip(dmin, dmax, ip_members, input_members):
+        # create cluster object
+        c = Cluster(interval.chrom, start, end, interval.strand, ip_site, input_site)
+        c.make_fixed_size(size = size)
+        # calculate enrichment score
+        c.enrich_score(total_ip_in_region, total_input_in_region)
+
+        clusters.append(c)
+    
+    return clusters, input_sites, sites
+
+def control_cluster(clusters, interval):
+    ''' given found cluster, return control cluster in the same interval of similar size '''
+
+     # find non-cluster region in interval
+    cluster_bedstr = ''
+
+    for c in clusters:
+        cluster_bedstr+=c.to_bedstr()
+    
+    clus_bed = BedTool(cluster_bedstr, from_string = True).saveas()
+
+    left_region = BedTool([interval]).subtract(clus_bed).saveas()
+
+    control_cluster = []  
+    lindex = 0
+    cindex = 0
+    while lindex < len(left_region) and cindex < len(clusters):
+        c = clusters[cindex]
+        l = left_region[lindex]
+        if  l.end-l.start < c.end-c.start:
+            # if flanking region is too small
+            lindex += 1
+        else:
+            midpoint = (l.start + l.end)/2
+            clus_half_length = (c.end-c.start)/2
+            start = math.ceil(midpoint - clus_half_length)
+            end = math.ceil(midpoint + clus_half_length)
+            
+            if end < 0:
+                end = 0
+            control_cluster.append(Cluster(interval.chrom, start, end, interval.strand, [], [])) # empty input and ip sites
+            cindex += 1
+            lindex += 1
+    
+    return control_cluster
+
+
+
+def get_cluster_seq(clusters):
+    ''' find cluster sequence'''
     seqs = []
     for c in clusters:
         
         if type(c.start)!= int or type(c.end) != int:
             print(c.start, c.end)
-        s = get_interval_seq(c.chrom, c.start-window,c.end+window, c.strand)
+        s = get_interval_seq(c.chrom, c.start, c.end, c.strand)
         c.seq = s
-def region_cluster(interval, bam, inputbam, vis = False, combine = True, window = 10):
+def region_cluster(interval, bam, inputbam, combine = True, eps = 2, min_samples = 2, size = 30, vis = False):
+    
     ''' find cluster within bedtools interval '''
     
     # create file object
@@ -32,13 +185,13 @@ def region_cluster(interval, bam, inputbam, vis = False, combine = True, window 
     inputbam_fileobj = pysam.Samfile(inputbam, 'rb')
     
     # find clusters combining input and IP read start
-    clusters, input_sites, sites = find_cluster(interval, bam_fileobj,inputbam_fileobj, combine = combine)
+    clusters, input_sites, sites = find_cluster(interval, bam_fileobj,inputbam_fileobj, combine = combine, eps = eps, min_samples = min_samples, size = size)
     # write the sequence into cluster object
-    get_cluster_seq(clusters, window = window)
+    get_cluster_seq(clusters)
     
     # generate size-matched, region-matched control cluster
     control_clusters = control_cluster(clusters, interval)
-    get_cluster_seq(control_clusters, window = window)
+    get_cluster_seq(control_clusters)
     
     if vis:
         visualize_cluster(input_sites, sites, clusters, control_clusters)
@@ -51,15 +204,20 @@ def region_cluster(interval, bam, inputbam, vis = False, combine = True, window 
     
     return clus_list, ctrl_list
 
-def main(ip_bamfile, input_bamfile, enrich_bed, n_upper = None, n_pool = 8, timeout = 1000):
+def main(ip_bamfile, input_bamfile, enrich_bed = None, n_upper = None, n_pool = 8, timeout = 1000, eps = 2, min_samples = 2, combine = True, size = 30, tsv = None):
     ''' DB scan for cluster
     ip_bamfile:
     input_bamfile:
     enrich_bed: bed file containing enriched region (produced by region_call.py)
     '''
     
-         
-    regions = BedTool(enrich_bed)
+    if enrich_bed:
+        regions = BedTool(enrich_bed)
+    else:
+        # Evan's region caller
+        df = pd.read_csv(tsv, sep = '\t')
+        df = df.loc[(df['q_betabinom_1'] < 0.05) & (df['q_betabinom_2'] < 0.05)]
+        regions = BedTool.from_dataframe(df[['chr', 'start', 'end', 'details', 'gc','strand']])
     # maximal regions
     if n_upper:
         regions = BedTool(regions[:n_upper]).saveas()
@@ -72,8 +230,11 @@ def main(ip_bamfile, input_bamfile, enrich_bed, n_upper = None, n_pool = 8, time
             (
             interval,
             ip_bamfile,
-            input_bamfile
-            
+            input_bamfile,
+            combine,
+            eps,
+            min_samples,
+            size
             
             )
              for interval in regions
@@ -102,44 +263,3 @@ def main(ip_bamfile, input_bamfile, enrich_bed, n_upper = None, n_pool = 8, time
     
     return clus_df, ctrl_df
 
-def option_parser():
-    ''' return parser
-    :return: OptionParser object
-    '''
-    usage = """
-        THIS IS CLIPPER FOR REGIONAL SHRINKING
-        python shrink_region.py --ip <bamfile> --input <bamfile> --bed <bed> --out <fname>
-        
-        To shrink enriched regions into binding sites that we hope to contain motifs
-Returns clusters (putative binding sites) and control clusters (size-matched, region-matched).
-By comparing cluster to control clusters, we can calculated R values.
-Clustering algorithm is DBSCAN
-        """
-    description = """CLIPper. Michael Lovci, Gabriel Pratt 2012, Hsuan-lin Her 2020.
-                         CLIP peakfinder by shrinking enriched region."""
-    parser = OptionParser(usage=usage, description=description)
-    
-    parser.add_option("--ip", "-i", dest="IPbam", help="IP bam file", type="string", metavar="FILE.bam")
-
-    parser.add_option("--input", "-s", dest="SMInputbam", help="size match input bam file")
-    
-    parser.add_option("--bed", "-b", dest="enrichBed", help="bedfile output by region_call.py")
-    parser.add_option("--out", "-o", dest="outfile", help="output file prefix: /home/hsher/rbfox2")
-    parser.add_option("--maxfeat", "-n", dest="nfeat", help="maximal number of feature", type = "int")
-    parser.add_option("--thread", "-t", dest="thread", help="multiprocessing", default = 8, type = "int")
-    
-    
-    return parser
-
-if __name__ == "__main__":
-    parser = option_parser()
-    (options, args) = parser.parse_args()
-    # call main
-    
-    
-    clus_df, ctrl_df = main(options.IPbam, options.SMInputbam, options.enrichBed, n_upper = options.nfeat, 
-    n_pool = options.thread, timeout = 1000)
-    
-    # save file
-    clus_df.to_pickle(options.outfile + '.pickle')
-    ctrl_df.to_pickle(options.outfile + '.ctrl.pickle')
