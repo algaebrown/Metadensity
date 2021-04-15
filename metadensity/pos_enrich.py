@@ -109,14 +109,14 @@ def auc_cum_dist(real, null, n_largest_to_remove = 5):
         all_ks.append(ks)
     return np.array(all_ks), np.array(all_p)
 
-def AUC_enrich(meta_null, meta_ip, pval_thres = 0.05, n_largest_to_remove = 5):
+def KS_enrich(meta_null, meta_ip, pval_thres = 0.05, n_largest_to_remove = 5):
     ''' main function to calculate enrichment based on AUC? '''
     result = {}
     pvals = {}
-    for key in meta_null.truncate_array.keys():
-        real = meta_ip.truncate_array[key]
+    for key in meta_null.density_array.keys():
+        real = meta_ip.density_array[key]
         real = np.nan_to_num(real, 0)
-        null = meta_null.truncate_array[key]
+        null = meta_null.density_array[key]
         null = np.nan_to_num(null, 0)
 
         auc_per_pos, all_p = auc_cum_dist(real, null, n_largest_to_remove = n_largest_to_remove)

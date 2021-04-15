@@ -8,6 +8,7 @@ import pickle
 import sys
 import os
 from collections import Counter, defaultdict
+import deepdish as dd
 
 
 from .readdensity import ReadDensity
@@ -109,7 +110,10 @@ class eCLIP:
             peaks[rep] = BedTool(series['bed_{}'.format(i)])
         
         # idr
-        idr = BedTool(series['idr'])
+        if 'idr' in series.index:
+            idr = BedTool(series['idr'])
+        else:
+            idr = None
 
         return cls(name=series['RBP'], uID=series['uid'], single_end=single_end, rep_keys = rep_keys, read_densities=read_densities, peaks = peaks, idr = idr)
 
@@ -121,7 +125,11 @@ class eCLIP:
         Kwargs:
             genome_coord: (BedTool) transcript coordintae. default are canonical transcripts.
         """
-        self.idr_transcript = genome_coord.intersect(self.idr, s=True, wa = True, u = True).saveas()
+        if self.idr:
+            self.idr_transcript = genome_coord.intersect(self.idr, s=True, u = True).saveas()
+        else:
+            self.idr_transcript = genome_coord.intersect(self.peaks[self.rep_keys[0]], s=True, u = True).saveas()
+            print('Warning: No IDR file input, falling back to using peaks from rep {}'.format(self.rep_keys[0]))
 
     ##################### FOR ENCODE DATA USE ONLY ###################################
         
@@ -132,31 +140,44 @@ class eCLIP:
 
 class Meta:
     ''' superclass of to inherit from '''
-    def __init__(self, eCLIP, name, sample_no = 200, metagenes = None, transcripts = None):
+    def __init__(self, eCLIP, name, sample_no = 200, metagenes = None, transcripts = None, transcript_ids = None, deep_dish_path = None):
         
         self.eCLIP = eCLIP
-        
         self.name = name
+
+        if deep_dish_path:
+            # load from precomputed data!
+            self.density_array = dd.io.load(deep_dish_path)
+            self.featnames = list(set([k[0] for k in self.density_array.keys()]))
         
-        
-        # TODO when initializing the exons are empty for some classes; but called using child behave normally.??
-        if metagenes:
-            self.metagene = metagenes # precomupted 
-        elif transcripts:
-            self.transcript = transcripts # BedTools object
-            self.build_metagene(sample_no = sample_no)
+
         else:
-            # by default use IDR transcripts
-            self.eCLIP.find_idr_transcript()
-            self.transcript = self.eCLIP.idr_transcript
-            self.build_metagene(sample_no = sample_no)
+            # compupte from scratch
+            if metagenes:
+                self.metagene = metagenes # precomupted 
+            elif transcript_ids:
+                self.build_metagene(sample_no = sample_no, tids = transcript_ids)
+            elif transcripts:
+                self.transcript = transcripts # BedTools object
+                self.build_metagene(sample_no = sample_no)
+            else:
+                # by default use IDR transcripts
+                self.eCLIP.find_idr_transcript()
+                self.transcript = self.eCLIP.idr_transcript
+                
+                self.build_metagene(sample_no = sample_no)
         
-        # get feature names
-        self.featnames = list(self.metagene.values())[0].featnames
+            # get feature names
+            self.featnames = list(self.metagene.values())[0].featnames
+            
+            self.density_array = {}
+
+
     
-    def build_metagene(self, sample_no = 200):
+    def build_metagene(self, sample_no = 200, tids = None):
         ''' Use function `Build_many_metagenes()` to get regions in UTR, intron, exon for each transcripts in self.idr_transcript and self.no_peak; store metagene in self.idr_metagene/self.neg_metagene'''
-        tids = [s.attrs['transcript_id'] for s in self.transcript]
+        if not tids:
+            tids = [s.attrs['transcript_id'] for s in self.transcript]
         self.metagene = Build_many_metagene(tids, sample_no = sample_no)
     def get_feature_density_array(self, feature, target_len, align, pad_value = np.nan, use_quantile = False, use_truncation = False):
         ''' align features by padding np.nan to the 5' or 3' end '''
@@ -172,9 +193,7 @@ class Meta:
                     den = m.truncations[self.eCLIP.uID][rep][feature]
                 else:
                     den = m.densities[self.eCLIP.uID][rep][feature]
-            
-            
-                              
+
                 # see if multi-feature average is called
                 if type(den) == tuple:
                     if align == 'left':
@@ -191,108 +210,90 @@ class Meta:
                     rep_densities.append(
                         trim_or_pad(den, target_len, align, pad_value)
                     )
-                 
-        
-            # store differntly
-            if use_quantile:
-                self.qdensity_array[feature,align,rep]= np.stack(rep_densities)
-            if use_truncation:
-                self.truncate_array[feature,align,rep]= np.stack(rep_densities)
-            else:
-                self.density_array[feature,align,rep]= np.stack(rep_densities)
+            self.density_array[feature,align,rep]= np.stack(rep_densities)
     def get_density_array(self, use_quantile = False, use_truncation = False):
         ''' extract metadensity from each metagene, zero pad or trim to get np array '''
-        
-        
-        if use_quantile:
-            self.qdensity_array = {}
-        if use_truncation:
-            self.truncate_array = {}
-        else:
-            self.density_array = {}
-        
         for feature in self.featnames:
             for align in ['left', 'right']:
                 flen = settings.feat_len[feature]
                 self.get_feature_density_array(feature, flen , align, use_quantile = use_quantile, use_truncation = use_truncation)
     def concat_density_array(self, rep = 'rep1', quantile = False):
         ''' return concatenated density array by sequence of featnames '''
-        # TODO make compatible to truncation 
-        if quantile:
-            concat = np.concatenate([self.qdensity_array[feat, align, rep] 
-                        for feat in self.featnames for align in ['left', 'right']],axis = 1)
-        else:
-            
-            concat = np.concatenate([self.density_array[feat, align, rep] 
-                        for feat in self.featnames for align in ['left', 'right']],axis = 1)
+        concat = np.concatenate([self.density_array[feat, align, rep] 
+                    for feat in self.featnames for align in ['left', 'right']],axis = 1)
         return concat
     def scale_density_array(self, method = 'norm_by_sum', quantile = False):
         
         ''' scale density array by only the features considered '''
-        # TODO make compatible to truncation 
-        self.scaled_density_array = {}
-        if quantile:
-            
-            denarray = self.qdensity_array
-        else:
-            
-            denarray = self.density_array
-            
         for rep in self.eCLIP.rep_keys:
-        
             rep_concat = self.concat_density_array(rep = rep, quantile = quantile)
-            
-        
             if method == 'norm_by_sum':
                 scale = np.nansum(rep_concat, axis = 1)[:, None]
-                
-            
             if method == 'max_scalar':
                 scale = np.nanmax(rep_concat, axis = 1)[:, None]
-                
-                      
             for align in ['left', 'right']:
                 for feature in self.featnames:
-                    self.scaled_density_array[feature,align,rep] = denarray[feature,align,rep]/scale
+                    self.scaled_density_array[feature,align,rep] = self.density_array[feature,align,rep]/scale
+    def apply(self, func, axis = 0):
+        ''' apply function to all features in self.density_array 
+        func = np.nanmean, np.median, np.std '''
+        result = {}
+        for key in self.density_array.keys():
+            result[key] = func(self.density_array[key], axis = axis)
+        return result
+    
+    def convolve(self, filter, axis = 0):
+        ''' wrapper around np.convolve,  use to smooth out signals '''
+        result = {}
+        for key in self.density_array.keys():
+            result[key] = np.apply_along_axis(lambda m: np.convolve(m, filter, mode='full'), axis=0, arr = self.density_array[key])
+        return result
+    def save_deepdish(self, outdir):
+        ''' save self.density_array to deepdish '''
+        dd.io.save(outdir, self.density_array)
+
+
 
 class Metatruncate(Meta):
     ''' Metagene for 5' read start '''
-    def __init__(self, eCLIP, name, sample_no = 200, background_method = 'subtract', normalize = True, metagenes = None, transcripts = None, smooth = False):
+    
+    def __init__(self, eCLIP, name, sample_no = 200, background_method = 'subtract', normalize = True, metagenes = None, transcripts = None, transcript_ids = None, deep_dish_path = None):
         # generate metagene coords
-        super().__init__(eCLIP, name, sample_no, metagenes = metagenes, transcripts = transcripts)
+        super().__init__(eCLIP, name, sample_no, metagenes = metagenes, transcripts = transcripts, transcript_ids = transcript_ids,
+        deep_dish_path = None)
 
         # automatically run
-        self.get_truncation(background_method = background_method, normalize = normalize, smooth = smooth)
+        self.get_truncation(background_method = background_method, normalize = normalize)
         self.background_method = background_method
         self.normalize = normalize
     
     
-    def get_truncation(self, background_method = 'subtract', normalize = True, smooth = False):
+    def get_truncation(self, background_method = 'subtract', normalize = True):
         ''' calculate metadensity for each metagene in self.idr_metagene or self.neg_metagene.
         store density in each metagene object
         background_method: 'subtract'; 'subtract normal'; 'relative information' How to deal with IP and Input. None for doing nothing.
         normalize: True to use % of edits in position; False to use raw background subtract signals
         '''
-        _ = [m.get_average_feature(self.eCLIP, background_method = background_method, normalize = normalize, truncate = True, smooth = smooth) for m in self.metagene.values()]
+        _ = [m.get_average_feature(self.eCLIP, background_method = background_method, normalize = normalize, truncate = True) for m in self.metagene.values()]
     
     
     
 class Metadensity(Meta):
     ''' Metadensity can be created from eCLIP and a set of transcripts'''
-    def __init__(self, eCLIP, name, sample_no = 200, background_method = 'subtract', normalize = True, metagenes = None, transcripts = None, smooth = False):
+    def __init__(self, eCLIP, name, sample_no = 200, background_method = 'subtract', normalize = True, metagenes = None, transcripts = None, transcript_ids = None):
         # generate metagene coords
-        super().__init__(eCLIP, name, sample_no, metagenes = metagenes, transcripts = transcripts)
+        super().__init__(eCLIP, name, sample_no, metagenes = metagenes, transcripts = transcripts, transcript_ids = transcript_ids)
 
         # automatically run
-        self.get_metadensity(background_method = background_method, normalize = normalize, smooth = smooth)
+        self.get_metadensity(background_method = background_method, normalize = normalize)
         self.background_method = background_method
         self.normalize = normalize
     
         
-    def get_metadensity(self, background_method = 'subtract', normalize = True, smooth = False):
+    def get_metadensity(self, background_method = 'subtract', normalize = True):
         ''' calculate metadensity for each metagene in self.idr_metagene or self.neg_metagene.
         store density in each metagene object'''
-        _ = [m.get_average_feature(self.eCLIP, background_method = background_method, normalize = normalize, truncate = False, smooth = smooth) for m in self.metagene.values()]
+        _ = [m.get_average_feature(self.eCLIP, background_method = background_method, normalize = normalize, truncate = False) for m in self.metagene.values()]
     
     
     
@@ -390,7 +391,29 @@ class Metagene:
             
                 self.features['five_utr'] = set([e for e in list(self.features['UTR']) if e[1] == max_start])
                 self.features['three_prime_UTR'] = set([e for e in list(self.features['UTR']) if e[0] == min_start])
+    def order_multi_feature(self, feature = 'exon'):
+        ''' order multifeature from five prime to three prime end '''
+        feat_list = list(self.features[feature])
+        if self.strand == '-':
+            # the largest 5 prime end is the first
+            
+            sorted_middle_exon = sorted(feat_list, key = lambda interval: interval[1], reverse = True)
+        else:
+            sorted_middle_exon = sorted(feat_list, key = lambda interval: interval[0], reverse = False)
+        return list(self.features['first_'+feature])+ sorted_middle_exon + list(self.features['last_'+feature])
     
+    def concat_multi_feature(self, value, feature = 'exon'):
+        ''' concatentae multiple feature in order, for example, multiple exon/CDS, from 5' to 3' '''
+        feat_in_order = self.order_multi_feature(feature = feature)
+        concat_val = []
+        for feat in feat_in_order:
+            relative = self.to_relative_axis(feat)
+            if self.strand == '-':
+                concat_val.append(value[relative[0]: relative[1]][::-1]) # TODO check if we need to +1
+            else:
+                concat_val.append(value[relative[0]: relative[1]]) # don't need to +1
+        return np.concatenate(concat_val)
+
     ################################## about raw values ###########################################
     def truncation_count(self, eCLIP, rep, feature):
         ''' return a list of read start count for each position in feature
@@ -580,7 +603,7 @@ class Metagene:
         
 
     
-    def get_average_feature(self, eCLIP, background_method = 'subtract', normalize = True, truncate = True, smooth = False):
+    def get_average_feature(self, eCLIP, background_method = 'subtract', normalize = True, truncate = True):
         ''' fetching values for each feature, also averaging them if needed 
         write values in self.truncate or self.densities, depending on truncate'''
         # fetch raw sites for all reps and ctrl
@@ -616,9 +639,7 @@ class Metagene:
                 values = self.remove_background(eCLIP, rep, method = background_method, truncate = truncate)
             else:
                 values = raw[eCLIP.uID][rep]
-            # smooth
-            if smooth:
-                values = gaussian_smooth(values)
+            
 
             # deal with normalization
             if normalize:
@@ -773,7 +794,7 @@ class YRNA(Metagene):
 class snoRNA(Metagene):
     def __init__(self, esnt, chro, start, end, strand, transcript_type, features = None):
         super().__init__(esnt, chro, start, end, strand, transcript_type, features)
-        self.featnames += ['5p_duplex', '3p_duplex', 'mature'] # TODO the boxes
+        self.featnames += ['BoxACA', 'BoxC', 'BoxD', 'BoxH', 'Duplex'] 
         
         
 class rRNA(Metagene):
@@ -783,7 +804,7 @@ class rRNA(Metagene):
 class tRNA(Metagene):
     def __init__(self, esnt, chro, start, end, strand, transcript_type, features = None):
         super().__init__(esnt, chro, start, end, strand, transcript_type, features)
-        self.featnames += ['D_loop', 'T_loop', 'Anticodon_loop', 'Variable_loop']
+        self.featnames += ['anticodon', 't_loop', 'd_loop', 'v_loop', 'anticodon_loop']
 
 class miRNA(Metagene):
     ''' a class for miRNA's features specifically '''
@@ -807,19 +828,10 @@ class miRNA(Metagene):
 
 
     
-def Build_many_metagene(id_list, sample_no = 200, transcript_type = 'protein_coding'):
+def Build_many_metagene(id_list=None, sample_no = 200, transcript_type = 'protein_coding'):
     ''' Create Metagene object for regions for key transcript 
     hg19 does not have 'three_prime_UTR and five_prime_UTR which is annoying'''
-    # Build empty metagene object
-    all_metagene = {}
-   
-    if len(id_list)< sample_no:
-        ids = id_list
-        
-    else: 
-        ids = id_list[:sample_no]
-
-    # load pre-parsed gencode coords and branchpoint
+   # load pre-parsed gencode coords and branchpoint
     
     if transcript_type == 'miRNA':
         coord_dicts = pickle.load(open(settings.mir, 'rb'))
@@ -828,6 +840,17 @@ def Build_many_metagene(id_list, sample_no = 200, transcript_type = 'protein_cod
     else:
         print('Using:',settings.gencode)
         coord_dicts = pickle.load(open(settings.gencode, 'rb'))
+     # Build empty metagene object
+    all_metagene = {}
+    if id_list==None:
+        # if not specify id, use all transcripts
+        ids = list(coord_dicts.keys())
+        
+    elif len(id_list)< sample_no:
+        ids = id_list
+        
+    else: 
+        ids = id_list[:sample_no]
     
     for i in ids:
         d = coord_dicts[i]
@@ -837,6 +860,10 @@ def Build_many_metagene(id_list, sample_no = 200, transcript_type = 'protein_cod
                 all_metagene[i] = Protein_coding_gene.from_dict(d)# TODO: miR, snoR will need another dictionary
             elif transcript_type == 'miRNA':
                 all_metagene[i] = miRNA.from_dict(d)
+            elif transcript_type == 'tRNA':
+                all_metagene[i] = tRNA.from_dict(d)
+            elif transcript_type == 'snoRNA':
+                all_metagene[i] = snoRNA.from_dict(d)
             else:
                 all_metagene[i] = Metagene.from_dict(d)
 
