@@ -19,25 +19,24 @@ feat_len_dict = settings.feat_len
 
 def calcaulte_grid_width(features_to_show, ax_width_dict):
     ''' calculate the number of grid needed for gridspec '''
-    n_exon = len([f for f in features_to_show if 'exon' in f])
-    n_cds = len([f for f in features_to_show if 'CDS' in f])
-    n_UTR = len([f for f in features_to_show if 'UTR' in f])
-    n_intron = len([f for f in features_to_show if 'intron' in f])
-    n_duplex = len([f for f in features_to_show if 'duplex' in f])
-    n_mature = len([f for f in features_to_show if 'mature' in f])
-    n_hairpin = len([f for f in features_to_show if 'hairpin' in f])
-    n_br = len([f for f in features_to_show if 'branchpoint' in f])
+    n_feat = []
+    width = []
+    feats = features_to_show.copy()
+    for key in ax_width_dict:
+        hit = [f for f in feats if key in f]
+        n_feat.append(len(hit))
+        width.append(ax_width_dict[key])
+        # left
+        feats = [f for f in feats if f not in hit]
+    
+    # other feats
+    if len(feats)>0:
+        n_feat.append(len(feats))
+        width.append(ax_width_dict[feats[0]])
+        
 
-    width = (ax_width_dict['UTR']*n_UTR + 
-    ax_width_dict['exon']*n_exon + 
-    ax_width_dict['intron']*n_intron + 
-    ax_width_dict['CDS']*n_cds+
-    ax_width_dict['duplex']*n_duplex+
-    ax_width_dict['mature']*n_mature+
-    ax_width_dict['hairpin']*n_hairpin+
-    ax_width_dict['branchpoint']*n_br
-    )*2
-    return width
+    total_width = sum([n_feat[i]*width[i] for i in range(len(n_feat))])*2
+    return total_width
 
 
 def generate_axis(nrows = 2, ax_width_dict = ax_width_dict, color_bar = False, feat_len_dict = feat_len_dict, features_to_show = featnames):
@@ -131,7 +130,7 @@ def plot_rbp_map(metas, alpha = 0.6, ymax = 0.001, features_to_show = featnames,
         
         # autodetect object type
         if isinstance(m, Metatruncate):
-            den_arr = m.truncate_array
+            den_arr = m.density_array
         elif isinstance(m, Metadensity):
             den_arr = m.density_array
         else:
@@ -184,13 +183,92 @@ def plot_mean_density(metas, ymax = 0.001, quantile = False, truncation = False,
     for m in metas:
         i=0
         if isinstance(m, Metatruncate):
-            den_arr = m.truncate_array
+            den_arr = m.density_array
         elif isinstance(m, Metadensity):
             den_arr = m.density_array
         else:
             print('Feeding wrong object {}. Only accept Metadensity or Metatruncate'.format(type(m)))
 
         for feat in features_to_show:
+            for align in ['left', 'right']:
+                density_concat = np.concatenate([den_arr[feat,align, r] for r in m.eCLIP.rep_keys], axis = 0)
+                flen = feat_len_dict[feat]
+                if align == 'left':
+                    density_concat = density_concat[:, :flen]
+                else:
+                    density_concat = density_concat[:, -flen:]
+
+
+                if stat == 'mean':
+                    md = np.nanmean(density_concat, axis = 0)
+                if stat == 'median':
+                    md = np.nanmedian(density_concat, axis = 0)
+                
+                std = np.nanstd(density_concat, axis = 0)
+                n = density_concat.shape[0]
+                sem = std/np.sqrt(n)
+                
+                ax = ax_dict[feat, align, 'rep1']
+                
+                
+
+                if smooth:
+                    if color_dict:
+                        ax.plot(gaussian_smooth(md), label = m.name, color = color_dict[m.name])
+                    else:
+                        ax.plot(gaussian_smooth(md), label = m.name)
+                else:
+                    if color_dict:
+                        ax.plot(md, label = m.name, color = color_dict[m.name])
+                    else:
+                        ax.plot(md, label = m.name)
+                    
+                    if plot_std:
+                        if color_dict:
+                            ax.fill_between(np.arange(len(md)), md-sem, md+sem, label = m.name, alpha = alpha, color = color_dict[m.name])
+                        else:
+                            ax.fill_between(np.arange(len(md)), md-sem, md+sem, label = m.name, alpha = alpha)
+                
+                if align == 'left' and feat == features_to_show[0]:
+                    if m.background_method == 'relative information':
+                        ylbl = '{} relative information'.format(stat)
+                    elif m.background_method == None:
+                        ylbl = '{} IP'.format(stat)
+                    else:
+                        ylbl = '{} subtracted '.format(stat)
+                    
+                    if m.normalize:
+                        ylbl += ' normalized density'
+                    else:
+                        ylbl += ' raw'
+                    ax.set_ylabel(ylbl)
+                
+                
+                    
+                i+= 1
+    plt.legend(bbox_to_anchor = (1.5, 1))
+    
+    
+    plt.suptitle('Pooled Density from Many Transcript')
+    return fig
+
+def plot_mean_density_heatmap(metas, ymax = 0.001, quantile = False, truncation = False, scaled = False, alpha = 0.3, plot_std = True, stat = 'mean', features_to_show = featnames, smooth = False, color_dict = None):
+    ''' get a bunch of eCLIPs, plot their mean density'''
+    fig, ax_dict = generate_axis(nrows = 1,  features_to_show = features_to_show)
+    _ = [ax_dict[key].set_ylim(ymax = ymax, ymin = 0) for key in ax_dict.keys() if features_to_show[0] in key]
+    
+    
+    
+    for m in metas:
+        i=0
+        if isinstance(m, Metatruncate):
+            den_arr = m.density_array
+        elif isinstance(m, Metadensity):
+            den_arr = m.density_array
+        else:
+            print('Feeding wrong object {}. Only accept Metadensity or Metatruncate'.format(type(m)))
+        for feat in features_to_show:
+        
             for align in ['left', 'right']:
                 density_concat = np.concatenate([den_arr[feat,align, r] for r in m.eCLIP.rep_keys], axis = 0)
                 flen = feat_len_dict[feat]
