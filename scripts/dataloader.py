@@ -3,6 +3,7 @@
 
 import pandas as pd
 import os
+import pysam
 
 ################## ENCODE 3 ####################
 encode_data = pd.read_pickle('~/projects/eclip_encode_id.pickle')
@@ -21,6 +22,47 @@ for row in encode_data.index:
 encode_data['uid'] = encode_data['uID']
 
 ################## ENCODE 4 ####################
-encode4_data = pd.read_pickle('/home/hsher/projects/ClipNet/ENCODE_stats/ready1214.pickle')
-encode4_data['Cell line'] = encode4_data['Cell Line']
+encode4_data =pd.read_pickle('/home/hsher/projects/ClipNet/ENCODE_stats/rbp_df.pickle')
+
 master_df = pd.concat([encode_data[['uid','RBP', 'Cell line']], encode4_data[['uid', 'RBP', 'Cell line']]], axis = 0)
+
+
+############ load bam ###################
+def return_fobj3(uid, encode_data = encode_data):
+    '''return BedTool, Pysam objects'''
+    
+    
+    row = encode_data.loc[encode_data['uID']==uid]
+    if row.shape[0] == 0:
+        print('No matching data')
+    else:
+        bam1 = row['bam_0'].values[0]
+        bam2 = row['bam_1'].values[0]
+        bam_in = row['bam_control'].values[0]
+    
+    
+    bam1_fobj = pysam.Samfile(bam1, 'rb')
+    bam2_fobj = pysam.Samfile(bam2, 'rb')
+    bam_input_fobj = pysam.Samfile(bam_in, 'rb')
+    
+    return bam1_fobj, bam2_fobj, bam_input_fobj
+def return_fobj4(uid, rbp_file = encode4_data):
+    '''return BedTool, Pysam objects'''
+    
+    
+    row = rbp_file.loc[rbp_file['uid']==uid]
+    if row.shape[0] == 0:
+        print('No matching data')
+    else:
+        bam1 = row['bam_0'].values[0]
+        bam2 = row['bam_1'].values[0]
+        bam_in1 = row['bam_control_0'].values[0]
+        bam_in2 = row['bam_control_1'].values[0]
+    
+    
+    bam1_fobj = pysam.Samfile(bam1, 'rb')
+    bam2_fobj = pysam.Samfile(bam2, 'rb')
+    bam_input1_fobj = pysam.Samfile(bam_in1, 'rb')
+    bam_input2_fobj = pysam.Samfile(bam_in2, 'rb')
+    
+    return bam1_fobj, bam2_fobj, bam_input1_fobj, bam_input2_fobj
