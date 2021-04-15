@@ -48,7 +48,21 @@ class MetadensityConfig:
                 'snoRNA': '', # TODO liftover
                 'tRNA':'',
                 'lncRNA':''
-            }
+            },
+            'ChlSab':{
+                'gencode': 'Chlor.gtf',
+                'transcript': 'Chlor.genes.gtf',
+                'gencode_feature': 'Chlor.combined.sorted.gtf',
+                'branchpoint': '',
+                'branchpoint_pred': '',
+                'polyA': '', #TODO liftover
+                'miR': '',
+                'pri-mir':'',
+                'snoRNA': '', # TODO liftover
+                'tRNA':'',
+                'lncRNA':''
+                },
+                
         }
 
         self.feat_len = {'five_prime_UTR':100,  ####### generic DNA
@@ -99,10 +113,10 @@ class MetadensityConfig:
         # processed coords
         self.datadir = os.path.join(os.path.dirname(__file__), 'data', self.genome_coord)
         self.gencode = os.path.join(self.datadir, 'gencode')
-        self.mir = os.path.join(self.datadir, 'mir')
-        self.sno = os.path.join(self.datadir, 'sno')
+        self.mir = os.path.join(self.datadir, 'miRNA')
+        self.sno = os.path.join(self.datadir, 'snoRNA')
         self.lnc = os.path.join(self.datadir, 'lnc')
-        self.trna = os.path.join(self.datadir, 'trna')
+        self.trna = os.path.join(self.datadir, 'tRNA')
 
         
 
