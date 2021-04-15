@@ -11,54 +11,54 @@ import sys
 
 from .sequence import *
 
+def fetch_reads(bam_fileobj, interval = None, chrom = None, start = None, end = None, strand = None, single_end = False):
+    ''' fetch reads by pysam.fetch, but strand specific '''
+    # fetching reads based on the way we are asking for it
+    if interval:
+        subset_reads = list(bam_fileobj.fetch(reference=str(interval.chrom), start=interval.start, end=interval.stop))
+    elif chrom:
+        subset_reads = list(bam_fileobj.fetch(reference=str(chrom), start=start, end=end))
+    # paired end, we only fetch read 2
+    if single_end:
+        pass
+    else:
+        subset_reads = [s for s in subset_reads if s.is_read2]
+    # filter for strand
+    if strand == '+':
+        reads = [s for s in subset_reads if not s.is_reverse]
+    else:
+        reads = [s for s in subset_reads if s.is_reverse]
+    return reads
 
 # fetch read start
 def read_start_sites(bam_fileobj, interval = None, chrom = None, start = None, end = None, strand = None, single_end = False):
-    ''' return read 2 5' end in bedtool interval from bamfile object; strand specific'''
-    
-    if not single_end:
-        if interval:
-            subset_reads = list(bam_fileobj.fetch(reference=str(interval.chrom), start=interval.start, end=interval.stop))
-            if interval.strand == '+':
-                # despite region is enriched with reads, it is possible none of them is read2
-                sites = [s.reference_start for s in subset_reads if s.is_read2 and not s.is_reverse]
-            else:
-                sites = [s.reference_end for s in subset_reads if s.is_read2 and s.is_reverse]
-            return sites
-        elif chrom:
-            subset_reads = list(bam_fileobj.fetch(reference=str(chrom), start=start, end=end))
-            if strand == '+':
-                sites = [s.reference_start for s in subset_reads if s.is_read2 and not s.is_reverse]
-            else:
-                sites = [s.reference_end for s in subset_reads if s.is_read2 and s.is_reverse]
-    if single_end:
-        if interval:
-            subset_reads = list(bam_fileobj.fetch(reference=str(interval.chrom), start=interval.start, end=interval.stop))
-            if interval.strand == '+':
-                sites = [s.reference_start for s in subset_reads if not s.is_reverse]
-            else:
-                sites = [s.reference_end for s in subset_reads if s.is_reverse]
-            return sites
-        elif chrom:
-            subset_reads = list(bam_fileobj.fetch(reference=str(chrom), start=start, end=end))
-            if strand == '+':
-                sites = [s.reference_start for s in subset_reads if not s.is_reverse]
-            else:
-                sites = [s.reference_end for s in subset_reads if s.is_reverse]
-    return sites
+    ''' return crosslinking events in bedtool interval from bamfile object; strand specific'''
+    profile = strand_specific_pileup(bam_fileobj, interval = interval, chrom = chrom, start = start, end = end, strand = strand, single_end = single_end)
+    event_count = profile[['trun', 'mismatch', 'del']].sum(axis = 1)
+    pos_list = []
+    for pos, count in zip(event_count.index.values, event_count.values):
+        
+        pos_list += [pos]*int(count)
+    return pos_list
+
 def truncation_relative_axis(bam_fileobj, interval = None, chrom = None, start = None, end = None, strand = None, single_end = False):
     '''
-    return truncation count for each position at each site (5' to 3')
+    return truncation + mismatch + indel count for each position at each site (5' to 3') in np.array()
     '''
+    
     if chrom:
-        sites = read_start_sites(bam_fileobj, chrom=chrom, start=start, end=end, strand=strand, single_end = single_end)
+        pass
+        
     else:
-        sites = read_start_sites(bam_fileobj, interval=interval, single_end = single_end)
+        chrom = interval.chrom
         start = interval.start
         end = interval.end
         strand = interval.strand
-        
-    site_count = Counter(sites)
+    
+    # get profile, index = genomic position, columns = number of mismatch, indel and truncation
+    profile = strand_specific_pileup(bam_fileobj, chrom=chrom, start=start, end=end, strand=strand, single_end = single_end)
+
+    site_count = Counter(profile[['trun', 'mismatch', 'del']].sum(axis = 1).to_dict()) # pointing pos -> value
         
     pos_count = []
     if strand == '+':
@@ -68,142 +68,51 @@ def truncation_relative_axis(bam_fileobj, interval = None, chrom = None, start =
         for pos in range(end, start-1, -1): # 15, 14, 13, 12, 11, 10
             pos_count.append(site_count[pos])
     return np.array(pos_count)  
-########################### read start clustering #######################################
-class Cluster:
-    ''' Read start Cluster'''
-    def __init__(self,chrom, start, end, strand, ip_site, input_site):
-        self.chrom = chrom
-        self.start = start
-        self.end = end
-        self.strand = strand
-        
-        
-        self.ip_site = ip_site
-        self.input_site = input_site
-        self.no_ip = len(ip_site)
-        self.no_input = len(input_site)
-        
-        self.score = None
-        self.seq = ''
-    def enrich_score(self, total_ip_in_region, total_input_in_region):
-        ''' calculate enrichment score by binom'''
+def strand_specific_pileup(bam_fileobj, interval = None, chrom = None, start = None, end = None, strand = None, single_end = False):
+    ''' pileup reads of a defined region, 
+    return profile (pd.DataFrame), count of truncation, deletion and nucleotides, index = genomic positions '''
     
+    reads = fetch_reads(bam_fileobj=bam_fileobj, chrom=chrom, start = start, end = end, strand =strand, interval = interval, single_end = single_end)
     
-        # probability of success
-        p = total_ip_in_region/(total_ip_in_region + total_input_in_region)
+    if interval:
+        start = interval.start
+        end = interval.end
+        strand = interval.strand
+        chrom = interval.chrom
     
-        
-        # binom
-        total_cluster = self.no_ip + self.no_input
+    all_pos_count = []
+    all_pos = []
+    for pileupcolumn in bam_fileobj.pileup(chrom, start = start, end = end, truncate = True):
     
-        bn = binom(total_cluster, p)
-        prob = bn.cdf(self.no_ip)
-        self.score = prob
-        
-        # pseudocount
-        
-        bn = binom(total_cluster+2, p)
-        prob = bn.cdf(self.no_ip+1)
-        self.pseudoscore = prob
-        
-
-    
-    
-    def to_bedstr(self):
-        ''' convert to bedtool compatible string format'''
-        bedstr = '{} {} {} {} {} {} {} {}\n'.format(self.chrom, self.start, self.end,0,'.',self.strand, '.', '.')
-        return bedstr
-
-
-def find_cluster(interval, bam_fileobj, inputbam_fileobj, combine = False, eps = 2, min_samples = 2):
-    ''' find read start cluster using DBSCAN
-    interval: BedTool interval
-    bam_fileobj: pysam IP bam
-    inputbam_fileobj: pysam Input bam
-    combine: if True, create cluster using both IP and Input reads; better for compare to Input.
-    eps, min_samples: DBSCAN param
-    '''
-    # fetch read starts
-    sites = read_start_sites(bam_fileobj, interval = interval)
-    input_sites = read_start_sites(inputbam_fileobj, interval = interval)
-    
-    total_ip_in_region = len(sites)
-    total_input_in_region = len(input_sites)
-    
-    if total_ip_in_region == 0:
-        # sometimes even region is enriched in coverage, it might contain no 5' sites at all
-        #print('site length: {}, input length: {}'.format(len(sites), len(input_sites)))
-        return [], input_sites, sites
-
-    # convert to numpy array
-    if combine:
-        X = np.array(sites + input_sites).reshape(1, -1).T
-        identity = np.array(['IP']*len(sites) + ['Input']*len(input_sites)) # remember where each data point comes from
-    else:
-        X = np.array(sites).reshape(1, -1).T
-        identity = np.array(['IP']*len(sites))# remember where each data point comes from
-
-    # run DBSCAN
-    clustering = DBSCAN(eps=eps, min_samples=min_samples).fit(X)
-
-    # convert to Cluster Object
-    
-    # not all belong to a cluster
-    lbl=clustering.labels_[clustering.core_sample_indices_] # labels
-    pos=X.flatten()[clustering.core_sample_indices_] # positions
-    identity = identity[clustering.core_sample_indices_] # IP or Input
-    
-    d=pd.DataFrame([lbl, pos, identity], index = ['label', 'position', 'identity']).T
-    dmax = d.groupby('label')['position'].max().values.flatten().tolist()
-    dmin = d.groupby('label')['position'].min().values.flatten().tolist()
-    ip_members = [g[1].loc[g[1]['identity'] == 'IP', 'position'].tolist() for g in d.groupby('label')]
-    input_members = [g[1].loc[g[1]['identity'] == 'Input', 'position'].tolist() for g in d.groupby('label')]
-
-    clusters = []
-    for start, end, ip_site, input_site in zip(dmin, dmax, ip_members, input_members):
-        # create cluster object
-        c = Cluster(interval.chrom, start, end, interval.strand, ip_site, input_site)
-        
-        # calculate enrichment score
-        c.enrich_score(total_ip_in_region, total_input_in_region)
-
-        clusters.append(c)
-    
-    return clusters, input_sites, sites
-
-def control_cluster(clusters, interval):
-    ''' given found cluster, return control cluster in the same interval of similar size '''
-
-     # find non-cluster region in interval
-    cluster_bedstr = ''
-
-    for c in clusters:
-        cluster_bedstr+=c.to_bedstr()
-    
-    clus_bed = BedTool(cluster_bedstr, from_string = True).saveas()
-
-    left_region = BedTool([interval]).subtract(clus_bed).saveas()
-
-    control_cluster = []  
-    lindex = 0
-    cindex = 0
-    while lindex < len(left_region) and cindex < len(clusters):
-        c = clusters[cindex]
-        l = left_region[lindex]
-        if  l.end-l.start < c.end-c.start:
-            # if flanking region is too small
-            lindex += 1
-        else:
-            midpoint = (l.start + l.end)/2
-            clus_half_length = (c.end-c.start)/2
-            start = math.ceil(midpoint - clus_half_length)
-            end = math.ceil(midpoint + clus_half_length)
+        pos_profile = []
+        for pileupread in pileupcolumn.pileups:
+            if (pileupread.alignment.is_reverse and strand == '-') or ((not pileupread.alignment.is_reverse) and strand == '+'):
+                if not pileupread.is_del and not pileupread.is_refskip:
+                    # query position is None if is_del or is_refskip is set.
+                    pos_profile.append(pileupread.alignment.query_sequence[pileupread.query_position])
             
-            if end < 0:
-                end = 0
-            control_cluster.append(Cluster(interval.chrom, start, end, interval.strand, [], [])) # empty input and ip sites
-            cindex += 1
-            lindex += 1
+                if pileupread.indel < 0:
+                    pos_profile.append('del')
+                    #print(pileupread.indel)
+                if pileupread.indel > 0:
+                    pos_profile.append('ins')
+                if (pileupread.is_tail and strand == '-') or (pileupread.is_head and strand == '+'): # truncation
+                    pos_profile.append('trun')
+        
+        all_pos_count.append(Counter(pos_profile))
+        all_pos.append(pileupcolumn.reference_pos)
+    profile = pd.DataFrame(all_pos_count, columns = list('ATCG')+['trun', 'del', 'ins'], index = all_pos).fillna(0)
     
-    return control_cluster
+    # get mismatch
+    get_mismatch(profile)
+    return profile
+
+def get_mismatch(profile):
+    ''' return # non-majority nucleotide in read '''
+    profile['mismatch'] = profile[list('ATCG')].sum(axis = 1)-profile[list('ATCG')].max(axis = 1)
+    return profile[list('ATCG')].sum(axis = 1)-profile[list('ATCG')].max(axis = 1)
+
+
+     
+
 
