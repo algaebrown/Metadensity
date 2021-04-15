@@ -4,18 +4,7 @@ from .truncation import  truncation_relative_axis, read_start_sites
 from .metadensity import gaussian_smooth
 import deepdish as dd
 
-def read_icshape(fname):
-    data = {}
-    with open(fname) as f:
-        for line in f:
-            
-            values = line[:-1].split('\t') # remove \n
-            gene_id = values[0]
-            gene_len = values[1]
-            coverage = values[2]
-            reactivity = [float(v) if v!= 'NULL' else np.nan for v in values[3:]]
-            data[gene_id] = reactivity
-    return data
+
 
 def window_around(data, start, end):
     ''' return values from start:end, handles problems like start < 0 or end > data langth '''
