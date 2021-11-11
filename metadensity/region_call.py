@@ -56,7 +56,10 @@ def region_based_calling(interval, ip_bamfile, input_bamfile, ip_total, smi_tota
 
         if pval < pval_thres:
             # if unadjusted pvalue is significant, return
-            bed = [interval.chrom, interval.start,interval.stop,interval.attrs['ID'],".",interval.strand, pval, fold_enrich, ip_region, smi_region]
+            try:
+                bed = [interval.chrom, interval.start,interval.stop,interval.attrs['ID'],".",interval.strand, pval, fold_enrich, ip_region, smi_region]
+            except:
+                bed = [interval.chrom, interval.start,interval.stop,interval[3],".",interval.strand, pval, fold_enrich, ip_region, smi_region]
             return bed
 
 def main(ip_bamfile, input_bamfile, features, n_upper = None, n_pool = 8, timeout = 1000, pval = 10**(-3), fold_change = 3, save_pickle = False):

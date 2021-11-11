@@ -3,11 +3,11 @@ from .truncation import read_start_sites
 from .sequence import get_truncation_seq, simulate_kmer_background, kmer_zscore
 import pandas as pd
 
-def get_all_site_seq(bam, chrom = 'chr1', start = 0, end = 248956422, strand = '+', window = 25,  single_end = False):
+def get_all_site_seq(bam, chrom = 'chr1', start = 0, end = 248956422, strand = '+', window = 25,  single_end = False, read2 = True):
     ''' fetch sequence around read start sites'''
     seq_around = []
     
-    sites = read_start_sites(bam, chrom = chrom, start = start, end = end, strand = strand, single_end = single_end)
+    sites = read_start_sites(bam, chrom = chrom, start = start, end = end, strand = strand, single_end = single_end, read2 = read2)
     seq = [get_truncation_seq(chrom, s, strand, window = window) for s in sites]
 
     return seq

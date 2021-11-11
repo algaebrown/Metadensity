@@ -67,13 +67,13 @@ class MetadensityConfig:
 
         self.feat_len = {'five_prime_UTR':100,  ####### generic DNA
                         'three_prime_UTR':150, 
-                        'intron':1500,
-                        'exon':150,
-                        'first_exon':150,
-                        'last_exon': 150,
-                        'CDS': 150, ######## protein coding
-                        'first_CDS': 150,
-                        'last_CDS':150,
+                        'intron':500,
+                        'exon':100,
+                        'first_exon':100,
+                        'last_exon': 100,
+                        'CDS': 100, ######## protein coding
+                        'first_CDS': 100,
+                        'last_CDS':100,
                         '3p_duplex': 20, ############ miR
                         '5p_duplex': 20,
                         'mature': 20,
@@ -81,9 +81,12 @@ class MetadensityConfig:
                         'pri_mir': 500, 
                         'start_codon':3,
                         'stop_codon':3,
-                        'branchpoint':20,
-                        'branchpoint_pred':20}
-        self.feat_len = defaultdict(lambda:20, self.feat_len)
+                        'branchpoint':50,
+                        'branchpoint_pred':50,
+                        'full_CDS':200}
+        self.point_feature_len=50
+        self.feat_len = defaultdict(lambda: self.point_feature_len, self.feat_len)
+        
         
         self.ax_width_dict = {'UTR':1,
                 'exon':2,
@@ -92,8 +95,8 @@ class MetadensityConfig:
                 'duplex':2,
                 'mature':2,
                 'hairpin':2,
-                'branchpoint':1}
-        self.ax_width_dict = defaultdict(lambda: 1, self.ax_width_dict)
+                'branchpoint':2}
+        self.ax_width_dict = defaultdict(lambda: 2, self.ax_width_dict)
         self.refresh_coords()
     def refresh_coords(self):
 

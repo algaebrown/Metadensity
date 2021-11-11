@@ -1,8 +1,8 @@
 import sys
 sys.path.append('/home/hsher/projects/Metadensity/metadensity')
 import os
-from seqem import *
-from sequence import simulate_kmer_background, kmer_zscore
+from .seqem import *
+from .sequence import simulate_kmer_background, kmer_zscore
 import seaborn as sns
 import logging
 from optparse import OptionParser

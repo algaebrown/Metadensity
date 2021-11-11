@@ -11,7 +11,7 @@ import sys
 
 from .sequence import *
 
-def fetch_reads(bam_fileobj, interval = None, chrom = None, start = None, end = None, strand = None, single_end = False):
+def fetch_reads(bam_fileobj, interval = None, chrom = None, start = None, end = None, strand = None, single_end = False, read2 = True):
     ''' fetch reads by pysam.fetch, but strand specific '''
     # fetching reads based on the way we are asking for it
     if interval:
@@ -21,8 +21,10 @@ def fetch_reads(bam_fileobj, interval = None, chrom = None, start = None, end = 
     # paired end, we only fetch read 2
     if single_end:
         pass
+    elif read2:
+        subset_reads = [s for s in subset_reads if s.is_read2] ### for eCLIP library
     else:
-        subset_reads = [s for s in subset_reads if s.is_read2]
+        subset_reads = [s for s in subset_reads if s.is_read1] ### for tao's m6A construction
     # filter for strand
     if strand == '+':
         reads = [s for s in subset_reads if not s.is_reverse]
@@ -31,9 +33,12 @@ def fetch_reads(bam_fileobj, interval = None, chrom = None, start = None, end = 
     return reads
 
 # fetch read start
-def read_start_sites(bam_fileobj, interval = None, chrom = None, start = None, end = None, strand = None, single_end = False):
+def read_start_sites(bam_fileobj, interval = None, chrom = None, start = None, end = None, strand = None, single_end = False, read2 = True):
     ''' return crosslinking events in bedtool interval from bamfile object; strand specific'''
-    profile = strand_specific_pileup(bam_fileobj, interval = interval, chrom = chrom, start = start, end = end, strand = strand, single_end = single_end)
+    if single_end:
+        # if there is only 1 read, no such read1/read2 issue
+        read2=False
+    profile = strand_specific_pileup(bam_fileobj, interval = interval, chrom = chrom, start = start, end = end, strand = strand, single_end = single_end, read2 = read2)
     event_count = profile[['trun', 'mismatch', 'del']].sum(axis = 1)
     pos_list = []
     for pos, count in zip(event_count.index.values, event_count.values):
@@ -41,11 +46,13 @@ def read_start_sites(bam_fileobj, interval = None, chrom = None, start = None, e
         pos_list += [pos]*int(count)
     return pos_list
 
-def truncation_relative_axis(bam_fileobj, interval = None, chrom = None, start = None, end = None, strand = None, single_end = False):
+def truncation_relative_axis(bam_fileobj, interval = None, chrom = None, start = None, end = None, strand = None, single_end = False, read2 = True):
     '''
     return truncation + mismatch + indel count for each position at each site (5' to 3') in np.array()
     '''
-    
+    if single_end:
+        # if there is only 1 read, no such read1/read2 issue
+        read2=False
     if chrom:
         pass
         
@@ -56,23 +63,26 @@ def truncation_relative_axis(bam_fileobj, interval = None, chrom = None, start =
         strand = interval.strand
     
     # get profile, index = genomic position, columns = number of mismatch, indel and truncation
-    profile = strand_specific_pileup(bam_fileobj, chrom=chrom, start=start, end=end, strand=strand, single_end = single_end)
+    profile = strand_specific_pileup(bam_fileobj, chrom=chrom, start=start, end=end, strand=strand, single_end = single_end, read2 = read2)
 
-    site_count = Counter(profile[['trun', 'mismatch', 'del']].sum(axis = 1).to_dict()) # pointing pos -> value
+    site_count = Counter(profile[['trun', 'mismatch', 'del']].sum(axis = 1).to_dict()) # pointing pos -> value #TODO allow selection
         
     pos_count = []
     if strand == '+':
-        for pos in range(start, end+1):
+        for pos in range(start, end):
             pos_count.append(site_count[pos])
     if strand == '-':
-        for pos in range(end, start-1, -1): # 15, 14, 13, 12, 11, 10
+        for pos in range(end, start, -1): # 15, 14, 13, 12, 11, 10
             pos_count.append(site_count[pos])
     return np.array(pos_count)  
-def strand_specific_pileup(bam_fileobj, interval = None, chrom = None, start = None, end = None, strand = None, single_end = False):
+def strand_specific_pileup(bam_fileobj, interval = None, chrom = None, start = None, end = None, strand = None, single_end = False, read2 = True):
     ''' pileup reads of a defined region, 
     return profile (pd.DataFrame), count of truncation, deletion and nucleotides, index = genomic positions '''
+
+    if single_end:
+        # if there is only 1 read, no such read1/read2 issue
+        read2=False
     
-    reads = fetch_reads(bam_fileobj=bam_fileobj, chrom=chrom, start = start, end = end, strand =strand, interval = interval, single_end = single_end)
     
     if interval:
         start = interval.start
@@ -86,7 +96,7 @@ def strand_specific_pileup(bam_fileobj, interval = None, chrom = None, start = N
     
         pos_profile = []
         for pileupread in pileupcolumn.pileups:
-            if (pileupread.alignment.is_reverse and strand == '-') or ((not pileupread.alignment.is_reverse) and strand == '+'):
+            if (pileupread.alignment.is_reverse and strand == '-' and pileupread.alignment.is_read2 == read2) or ((not pileupread.alignment.is_reverse) and strand == '+' and pileupread.alignment.is_read2 == read2):
                 if not pileupread.is_del and not pileupread.is_refskip:
                     # query position is None if is_del or is_refskip is set.
                     pos_profile.append(pileupread.alignment.query_sequence[pileupread.query_position])

@@ -1,0 +1,4 @@
+condition1=/projects/ps-yeolab5/encode/rnaseq/shrna_knockdown/ENCFF033BTT.bam,/projects/ps-yeolab5/encode/rnaseq/shrna_knockdown/ENCFF836OGF.bam 
+condition2=/projects/ps-yeolab5/encode/rnaseq/shrna_knockdown/ENCFF958NOA.bam,/projects/ps-yeolab5/encode/rnaseq/shrna_knockdown/ENCFF202ZWS.bam
+
+1

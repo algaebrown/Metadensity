@@ -4,7 +4,8 @@
 #'''
 
 import sys
-
+from scipy.signal import find_peaks
+from scipy.ndimage import gaussian_filter
 from .truncation import *
 from .sequence import *
 import matplotlib.pyplot as plt
@@ -71,7 +72,7 @@ class Cluster:
         return bedstr
 
 
-def find_cluster(interval, bam_fileobj, inputbam_fileobj, combine = False, eps = 2, min_samples = 2, size = 30):
+def find_cluster(interval, bam_fileobj, inputbam_fileobj, combine = False, eps = 2, min_samples = 2, size = 30, read2 = True):
     ''' find read start cluster using DBSCAN
     interval: BedTool interval
     bam_fileobj: pysam IP bam
@@ -80,8 +81,8 @@ def find_cluster(interval, bam_fileobj, inputbam_fileobj, combine = False, eps =
     eps, min_samples: DBSCAN param
     '''
     # fetch read starts
-    sites = read_start_sites(bam_fileobj, interval = interval)
-    input_sites = read_start_sites(inputbam_fileobj, interval = interval)
+    sites = read_start_sites(bam_fileobj, interval = interval, read2 = read2)
+    input_sites = read_start_sites(inputbam_fileobj, interval = interval, read2 = read2)
     
     total_ip_in_region = len(sites)
     total_input_in_region = len(input_sites)
@@ -176,7 +177,7 @@ def get_cluster_seq(clusters):
             print(c.start, c.end)
         s = get_interval_seq(c.chrom, c.start, c.end, c.strand)
         c.seq = s
-def region_cluster(interval, bam, inputbam, combine = True, eps = 2, min_samples = 2, size = 30, vis = False):
+def region_cluster(interval, bam, inputbam, combine = True, eps = 2, min_samples = 2, size = 30, vis = False, read2 = True):
     
     ''' find cluster within bedtools interval '''
     
@@ -185,7 +186,7 @@ def region_cluster(interval, bam, inputbam, combine = True, eps = 2, min_samples
     inputbam_fileobj = pysam.Samfile(inputbam, 'rb')
     
     # find clusters combining input and IP read start
-    clusters, input_sites, sites = find_cluster(interval, bam_fileobj,inputbam_fileobj, combine = combine, eps = eps, min_samples = min_samples, size = size)
+    clusters, input_sites, sites = find_cluster(interval, bam_fileobj,inputbam_fileobj, combine = combine, eps = eps, min_samples = min_samples, size = size, read2 = read2)
     # write the sequence into cluster object
     get_cluster_seq(clusters)
     
@@ -204,7 +205,72 @@ def region_cluster(interval, bam, inputbam, combine = True, eps = 2, min_samples
     
     return clus_list, ctrl_list
 
-def main(ip_bamfile, input_bamfile, enrich_bed = None, n_upper = None, n_pool = 8, timeout = 1000, eps = 2, min_samples = 2, combine = True, size = 30, tsv = None):
+def region_cluster_ri(interval, bam, inputbam, pseudocount = 0.1, sigma = 2, ri_height = 0.02, size = 30, read2 = True):
+    ''' use RI to center the cluster instead of DBSCAN '''
+    # create file object
+    bam_fileobj = pysam.Samfile(bam, 'rb')
+    inputbam_fileobj = pysam.Samfile(inputbam, 'rb')
+    
+    ip=np.array(truncation_relative_axis(bam_fileobj, interval = interval, read2 = read2))
+    in_=np.array(truncation_relative_axis(inputbam_fileobj, interval = interval, read2 = read2))
+
+    total_ip_in_region = ip.sum()
+    total_input_in_region = in_.sum()
+    
+    
+    ipdist = ip+pseudocount
+    ipdist = gaussian_filter(ipdist/ipdist.sum(), sigma = sigma)
+    
+    indist = in_+pseudocount
+    indist = gaussian_filter(indist/indist.sum(), sigma = sigma)
+    trun = ipdist*np.log(ipdist/indist) ### relative entropy
+
+    # get sequence
+    seq = getRNAsequence(interval)
+    # ip peaks
+    peaks, _ = find_peaks(trun, height=ri_height, distance = size/2)
+    
+    def get_cluster_info(peak):
+        ''' local function to get info for clusters '''
+        clus_list = []
+        for p in peaks:
+            chrom = interval.chrom
+            start = int(p-size/2)
+            end = int(p+size/2)
+            strand = interval.strand
+
+            absl_start = interval.start + start if strand == '+' else interval.end-end
+            absl_end = interval.start + end if strand == '+' else interval.end-start
+
+            
+            # how many reads
+            no_ip = ip[start:end].sum()
+            no_in = in_[start:end].sum()
+
+            # probability of success
+            p = (total_ip_in_region+1)/(total_ip_in_region + total_input_in_region+2)
+        
+            # binom
+            total_cluster = no_ip + no_in
+            bn = binom(total_cluster+2, p)
+            pseudoscore = bn.cdf(no_ip+1)
+            
+            subseq = str(seq[start:end])
+            
+            clus_list.append([chrom, absl_start, absl_end, strand, no_ip, no_in, pseudoscore, subseq])
+        return clus_list
+    
+    clus_list = get_cluster_info(peaks)
+    
+    peaks, _ = find_peaks(-trun, height=0, distance = size/2)
+    ctrl_list = get_cluster_info(peaks)
+
+    
+    
+    return clus_list, ctrl_list
+    
+
+def main(ip_bamfile, input_bamfile, enrich_bed = None, n_upper = None, n_pool = 8, timeout = 1000, eps = 2, min_samples = 2, combine = True, size = 30, tsv = None, use_ri =False, read2 = True):
     ''' DB scan for cluster
     ip_bamfile:
     input_bamfile:
@@ -225,25 +291,50 @@ def main(ip_bamfile, input_bamfile, enrich_bed = None, n_upper = None, n_pool = 
     print('Segmented Regions')
 
     # setup multiprocessing
-    pool = Pool(int(n_pool)) #interval, ip_bamfile, input_bamfile, ip_total, smi_total, pval_thres = 0.05
-    tasks = [
-            (
-            interval,
-            ip_bamfile,
-            input_bamfile,
-            combine,
-            eps,
-            min_samples,
-            size
-            
-            )
-             for interval in regions
-             ] # pseudocount
-    print('doing DB-SCAN for {} regions:'.format(len(tasks)))
+    if not use_ri:
+        pool = Pool(int(n_pool)) #interval, ip_bamfile, input_bamfile, ip_total, smi_total, pval_thres = 0.05
+        tasks = [
+                (
+                interval,
+                ip_bamfile,
+                input_bamfile,
+                combine,
+                eps,
+                min_samples,
+                size, 
+                read2
+                
+                )
+                for interval in regions
+                ] # pseudocount
+        print('doing DB-SCAN for {} regions:'.format(len(tasks)))
+        jobs = [pool.apply_async(region_cluster, task) for task in tasks]
+    else:
+        pseudocount = 0.1
+        sigma = 2
+        ri_height = 0.02
+        size = 30 #TODO allow options for these
+        pool = Pool(int(n_pool)) #interval, ip_bamfile, input_bamfile, ip_total, smi_total, pval_thres = 0.05
+        tasks = [
+                (
+                interval,
+                ip_bamfile,
+                input_bamfile,
+                pseudocount,
+                sigma,
+                ri_height,
+                size,
+                read2
+                
+                )
+                for interval in regions
+                ] # pseudocount
+        print('doing DB-SCAN for {} regions:'.format(len(tasks)))
+        jobs = [pool.apply_async(region_cluster_ri, task) for task in tasks]
 
     clusters = []
     control_clusters = []
-    jobs = [pool.apply_async(region_cluster, task) for task in tasks]
+    
     for job in jobs:
         if job.get(timeout=timeout):
             
@@ -255,11 +346,24 @@ def main(ip_bamfile, input_bamfile, enrich_bed = None, n_upper = None, n_pool = 
     print('Clusters found', len(clusters))
     print('Control clusters matched', len(control_clusters))
     
-    clus_df = pd.DataFrame(clusters, 
-                           columns = ['chrom', 'start', 'end', 'strand', 
-                                      'no_ip', 'no_input', 'pseudoscore', 'seq', 'ip_site', 'input_site'])
+    try:
+        clus_df = pd.DataFrame(clusters, 
+                            columns = ['chrom', 'start', 'end', 'strand', 
+                                        'no_ip', 'no_input', 'pseudoscore', 'seq', 'ip_site', 'input_site'])
+    except:
+        clus_df = pd.DataFrame(clusters, 
+                            columns = ['chrom', 'start', 'end', 'strand', 
+                                        'no_ip', 'no_input', 'pseudoscore', 'seq'])
+    
+    # control df
     ctrl_df = pd.DataFrame(control_clusters, 
                            columns = ['chrom', 'start', 'end', 'strand', 'no_ip', 'no_input', 'score', 'seq'])
+    # should never overlap
+    ctrl_bed = BedTool.from_dataframe(ctrl_df[['chrom', 'start','end', 'score', 'seq', 'strand', 'no_ip', 'no_input']])
+    real_bed = BedTool.from_dataframe(clus_df[['chrom', 'start','end', 'pseudoscore', 'seq', 'strand']])
+
+    valid_ctrl = ctrl_bed.intersect(real_bed, s = True, v = True).saveas()
+    ctrl_df = valid_ctrl.to_dataframe(names = ['chrom', 'start','end', 'score', 'seq', 'strand', 'no_ip', 'no_input'])
     
     return clus_df, ctrl_df
 

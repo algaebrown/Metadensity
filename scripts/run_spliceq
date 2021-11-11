@@ -1,0 +1,2 @@
+conda activate splice_q
+SPLICE-q.py -b /projects/ps-yeolab5/encode/rnaseq/shrna_knockdown/ENCFF033BTT.bam -g ~/gencode_coords/gencode.v33.annotation.gtf -x 2 -p 1 -i -o {}

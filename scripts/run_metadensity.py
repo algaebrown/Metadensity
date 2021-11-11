@@ -37,33 +37,49 @@ def main(uID, outdir):
     
     # get truncation
     mtru = Metatruncate(e, e.name+'_idr',background_method = 'subtract', normalize = True, metagenes = mden.metagene.copy())
-    mtru.get_density_array(use_truncation = True)
+    mtru.get_density_array(use_truncation = True, full_CDS= True)
     
        
     print('saving results to {}'.format(outdir))
     
     # save aligned density
-    dd.io.save(os.path.join(outdir, '{}_densityarr.h5'.format(e.uID)), mden.density_array)
+    #dd.io.save(os.path.join(outdir, '{}_densityarr.h5'.format(e.uID)), mden.density_array)
+    # save aligned density
+    print(mden)
+
+    print(mden.density_array)
+    mden.save_deepdish(os.path.join(outdir, '{}_densityarr.h5'.format(e.uID)))
+    mden_ri.save_deepdish(os.path.join(outdir, '{}_ridensityarr.h5'.format(e.uID)))
+    mtru.save_deepdish(os.path.join(outdir, '{}_truncatearr.h5'.format(e.uID)))
     
     # save aligned density
-    dd.io.save(os.path.join(outdir, '{}_ridensityarr.h5'.format(e.uID)), mden_ri.density_array)
+    #dd.io.save(os.path.join(outdir, '{}_ridensityarr.h5'.format(e.uID)), mden_ri.density_array)
         
     # save aligned density
-    dd.io.save(os.path.join(outdir, '{}_truncatearr.h5'.format(e.uID)), mtru.truncate_array)
+    #dd.io.save(os.path.join(outdir, '{}_truncatearr.h5'.format(e.uID)), mtru.density_array)
 
     # plotting
     
     rna = ['first_exon', 'exon', 'intron', 'last_exon']
     protein_coding = ['five_prime_UTR', 'first_CDS', 'CDS', 'last_CDS', 'three_prime_UTR']
+    protein_coding_two =  ['five_prime_UTR', 'full_CDS', 'three_prime_UTR']
     
     
     print('plotting mean density')
+
+    
     
     f = plot_mean_density([mtru], ymax = 0.0007, features_to_show = rna)
     f.savefig(os.path.join(outdir,'{}_{}_{}_trun.pdf'.format(e.uID, 'RNA', 'mean')), dpi = 300)
 
     f = plot_mean_density([mden], ymax = 0.0007, features_to_show = rna)
     f.savefig(os.path.join(outdir,'{}_{}_{}_den.pdf'.format(e.uID, 'RNA', 'mean')), dpi = 300)
+
+    f = plot_mean_density([mtru], ymax = 0.0007, features_to_show = protein_coding_two)
+    f.savefig(os.path.join(outdir,'{}_{}_{}_trun.pdf'.format(e.uID, 'CDSfull', 'mean')), dpi = 300)
+
+    f = plot_mean_density([mden], ymax = 0.0007, features_to_show = protein_coding_two)
+    f.savefig(os.path.join(outdir,'{}_{}_{}_den.pdf'.format(e.uID, 'CDSfull', 'mean')), dpi = 300)
     
     f = plot_mean_density([mtru], ymax = 0.0007, features_to_show = protein_coding)
     f.savefig(os.path.join(outdir, '{}_{}_{}_trun.pdf'.format(e.uID, 'CDS', 'mean')), dpi = 300)

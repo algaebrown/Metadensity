@@ -131,7 +131,13 @@ def kmer_zscore(ip_seqs, mean, std, k = 7):
     ''' return z score for each k-mer based on control k-mer distribution'''
     
     kmer_freq = pd.Series(count_kmer(ip_seqs, k = k))/len(ip_seqs)
+
+    # unobserved, set mean to minimim
+    unsampled_kmer = list(set(kmer_freq.index)-set(mean.index))
+    
     kmer_freq=kmer_freq[list(set(mean.index).intersection(kmer_freq.index))]
+
+    
     
     # get z score
     return (kmer_freq - mean[kmer_freq.index]).div(std[kmer_freq.index])
