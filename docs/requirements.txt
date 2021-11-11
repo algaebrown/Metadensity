@@ -1,3 +1,6 @@
 bluepy
 ipykernel
 nbsphinx
+sphinx-press-theme
+pandoc
+
