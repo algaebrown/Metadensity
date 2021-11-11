@@ -7,11 +7,11 @@ Welcome to Metadensity's documentation!
 =======================================
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 4
    :caption: Contents:
 
-metadensity
-0_customize_feature_example_miRNA_host_gene
+   metadensity
+   0_customize_feature_example_miRNA_host_gene
 
 Indices and tables
 ==================
