@@ -3,6 +3,7 @@
 Scripts to visualize meta-density
 '''
 from collections import OrderedDict
+from scipy.ndimage import gaussian_filter
 import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -70,9 +71,6 @@ def generate_axis(nrows = 2, ax_width_dict = ax_width_dict, color_bar = False, f
                 
                 width = width_dict[feat]
                 
-                flen = feat_len_dict[feat]
-                
-                
                 ## left y-axis
                 if feat == features_to_show[0] and align == 'left':
                     ax_dict[feat, align, 'rep{}'.format(r+1)] = fig.add_subplot(spec[r,current: current+width])
@@ -100,40 +98,11 @@ def generate_axis(nrows = 2, ax_width_dict = ax_width_dict, color_bar = False, f
                 
                 
                 ## X-ticks with special feature
-                
-                if align == 'right':
-                    ax_dict[feat, align, 'rep{}'.format(r+1)].set_xticks(np.arange(0, flen+1, flen/5))
-                    xticklabel = ['{:.0f}'.format(x) for x in np.arange(-flen, 1, flen/5)]
-                    
-                    if feat == 'three_prime_UTR':
-                        xticklabel[-1] = 'TTS'
-                    if feat == 'intron':
-                        xticklabel[-1] = '3\' SS'
-                    if feat == 'last_CDS':
-                        xticklabel[-1] = 'stop codon'
-                    if 'branchpoint' in feat or 'polyA' in feat: # point features
-                        ax_dict[feat, align, 'rep{}'.format(r+1)].set_xticks(np.arange(0, flen, flen/5))
-                        xticklabel = ['{:.0f}'.format(x) for x in np.arange(0,flen, flen/5)]
-                        xticklabel[0] = feat
+                xticks, xticklabel = get_xticklabels(feat, align, n_tick = 5)
+                ax_dict[feat, align, 'rep{}'.format(r+1)].set_xticks(xticks)
+                ax_dict[feat, align, 'rep{}'.format(r+1)].set_xticklabels(xticklabel, rotation = 90)   
 
 
-                    
-                else:
-                    ax_dict[feat, align, 'rep{}'.format(r+1)].set_xticks(np.arange(0, flen, flen/5))
-                    xticklabel = ['{:.0f}'.format(x) for x in np.arange(0,flen, flen/5)]
-                    if feat == 'five_prime_UTR':
-                        xticklabel[0] = 'TSS'
-                    if feat == 'intron':
-                        xticklabel[0] = '5\' SS'
-                    if feat == 'first_CDS':
-                        xticklabel[0] = 'start codon'
-                    if 'branchpoint' in feat or 'polyA' in feat: # point features
-                        ax_dict[feat, align, 'rep{}'.format(r+1)].set_xticks(np.arange(0, flen+1, flen/5))
-                        xticklabel = ['{:.0f}'.format(x) for x in np.arange(-flen, 1, flen/5)]
-                        xticklabel[-1] = feat
-                        
-                
-                ax_dict[feat, align, 'rep{}'.format(r+1)].set_xticklabels(xticklabel, rotation = 90)    
                 current = current+width
                 
     
@@ -142,11 +111,53 @@ def generate_axis(nrows = 2, ax_width_dict = ax_width_dict, color_bar = False, f
     
     return fig, ax_dict
 
+def get_xticklabels(feat, align, n_tick = 5):
+    '''create xticklabels for each kind of features'''
+    flen = feat_len_dict[feat]
 
+    if align == 'right':
+        xticks = np.arange(0, flen+1, flen/n_tick)
+        xticklabel = ['{:.0f}'.format(x) for x in np.arange(-flen, 1, flen/5)]
+        
+        if feat == 'three_prime_UTR':
+            xticklabel[-1] = 'TTS'
+        if 'intron' in feat:
+            xticklabel[-1] = '3\' SS'
+        if feat == 'last_CDS':
+            xticklabel[-1] = 'stop codon'
+        if 'branchpoint' in feat or 'polyA' in feat: # point features
+            xticks = np.arange(0, flen, flen/5)
+            xticklabel = ['{:.0f}'.format(x) for x in np.arange(0,flen, flen/5)]
+            xticklabel[0] = feat
+    else:
+        xticks = np.arange(0, flen, flen/5)
+        xticklabel = ['{:.0f}'.format(x) for x in np.arange(0,flen, flen/5)]
+        if feat == 'five_prime_UTR':
+            xticklabel[0] = 'TSS'
+        if 'intron' in feat:
+            xticklabel[0] = '5\' SS'
+        if feat == 'first_CDS':
+            xticklabel[0] = 'start codon'
+        if 'branchpoint' in feat or 'polyA' in feat: # point features
+            xticks = np.arange(0, flen+1, flen/5)
+            xticklabel = ['{:.0f}'.format(x) for x in np.arange(-flen, 1, flen/5)]
+            xticklabel[-1] = feat
+    return xticks, xticklabel
+
+
+def beautify(fig, offset = 10, trim = True, left = True):
+    ''' wrapper around sns.despine to make ugly python figures better-looking'''
+    for i,ax in enumerate(fig.get_axes()):
+        if i>0:
+            sns.despine(offset=offset, trim=trim, left = left, ax = ax)
+        else:
+            sns.despine(offset=offset, trim=trim, ax = ax)
+        plt.setp(ax.get_xticklabels(), rotation=90)
+    return fig
     
 
 ################################## real plotting functions start here #############################################
-def plot_rbp_map(metas, alpha = 0.6, ymax = 0.001, features_to_show = featnames, sort = False, rep_handle = 'combined'):
+def plot_rbp_map(metas, alpha = 0.6, ymax = 0.001, features_to_show = featnames, sort = False, rep_handle = 'combined', cmap = 'Greys'):
     ''' get a bunch of Metadensity or Metatruncation Object, plot their individual density in a heatmap'''
     fig, ax_dict = generate_axis(nrows = len(metas), color_bar = True, features_to_show = features_to_show)
     
@@ -186,10 +197,16 @@ def plot_rbp_map(metas, alpha = 0.6, ymax = 0.001, features_to_show = featnames,
                 
                 # find axis and plot
                 ax = ax_dict[feat, align, rep]
-                sns.heatmap(density_concat, ax = ax, cbar_ax = ax_dict['colorbar'], vmin = 0, vmax = ymax, cmap="YlGnBu")
+                sns.heatmap(density_concat, ax = ax, cbar_ax = ax_dict['colorbar'], vmin = 0, vmax = ymax, cmap=cmap)
                 
                 if align == 'left' and feat == features_to_show[0]:    
                     ax.set_ylabel(m.name)
+                
+                ## X-ticks with special featurel sns.heatmap overrids xticks
+                xticks, xticklabel = get_xticklabels(feat, align, n_tick = 5)
+                
+                ax_dict[feat, align, rep].set_xticks(xticks)
+                ax_dict[feat, align, rep].set_xticklabels(xticklabel, rotation = 90)
                     
                 i+= 1
     #plt.suptitle('RBP map: individual transcript')
@@ -198,7 +215,9 @@ def plot_rbp_map(metas, alpha = 0.6, ymax = 0.001, features_to_show = featnames,
 
 
 # show that std is large
-def plot_mean_density(metas, ymax = 0.001, alpha = 0.3, plot_std = True, stat = 'mean', features_to_show = featnames, smooth = False, color_dict = None, mask = False):
+def plot_mean_density(metas, ymax = 0.001, alpha = 0.3, plot_std = True, stat = 'mean', 
+features_to_show = featnames, smooth = False, color_dict = None, mask = False, ylabel = None,
+sigma = 5):
     ''' get a bunch of eCLIPs, plot their mean density'''
     fig, ax_dict = generate_axis(nrows = 1,  features_to_show = features_to_show)
 
@@ -248,9 +267,9 @@ def plot_mean_density(metas, ymax = 0.001, alpha = 0.3, plot_std = True, stat = 
 
                 if smooth:
                     if color_dict:
-                        ax.plot(gaussian_smooth(md), label = m.name, color = color_dict[m.name])
+                        ax.plot(gaussian_filter(md, sigma = sigma), label = m.name, color = color_dict[m.name])
                     else:
-                        ax.plot(gaussian_smooth(md), label = m.name)
+                        ax.plot(gaussian_filter(md, sigma = sigma), label = m.name)
                 else:
                     if color_dict:
                         ax.plot(md, label = m.name, color = color_dict[m.name])
@@ -264,18 +283,21 @@ def plot_mean_density(metas, ymax = 0.001, alpha = 0.3, plot_std = True, stat = 
                             ax.fill_between(np.arange(len(md)), md-sem, md+sem, label = m.name, alpha = alpha)
                 
                 if align == 'left' and feat == features_to_show[0]:
-                    if m.background_method == 'relative information':
-                        ylbl = '{} relative information'.format(stat)
-                    elif m.background_method == None:
-                        ylbl = '{} IP'.format(stat)
+                    if ylabel:
+                        ax.set_label(ylbl)
                     else:
-                        ylbl = '{} subtracted '.format(stat)
-                    
-                    if m.normalize:
-                        ylbl += ' normalized density'
-                    else:
-                        ylbl += ' raw'
-                    ax.set_ylabel(ylbl)
+                        if m.background_method == 'relative information':
+                            ylbl = '{} relative information'.format(stat)
+                        elif m.background_method == None:
+                            ylbl = '{} IP'.format(stat)
+                        else:
+                            ylbl = '{} subtracted '.format(stat)
+                        
+                        if m.normalize:
+                            ylbl += ' normalized density'
+                        else:
+                            ylbl += ' raw'
+                        ax.set_ylabel(ylbl)
                 
                 
                     
@@ -296,7 +318,7 @@ def auto_rbp_color(rbp_list):
     cmap = plt.cm.get_cmap('rainbow', len(rbp_list)+1)
     return dict(zip(rbp_list, [cmap(i) for i in range(len(rbp_list))]))
 
-def plot_enrich(metas, ymax = 0.5, alpha = 0.3, features_to_show = featnames, smooth = False, color_dict = None, mask = False, scatter = False, ymin =0):
+def plot_enrich(metas, ymax = 0.5, alpha = 0.3, features_to_show = featnames, smooth = False, color_dict = None, mask = False, scatter = False, ymin =0, sigma = 5):
     ''' get a bunch of eCLIPs, plot their mean density'''
     fig, ax_dict = generate_axis(nrows = 1,  features_to_show = features_to_show)
 
@@ -328,7 +350,7 @@ def plot_enrich(metas, ymax = 0.5, alpha = 0.3, features_to_show = featnames, sm
                         if scatter:
                             ax.scatter(list(range(len(md))), md, label = m.name, color = color_dict[m.name], alpha = alpha, marker = '.')
                     
-                        ax.plot(gaussian_smooth(md), label = m.name, color = color_dict[m.name])
+                        ax.plot(gaussian_filter(md, sigma = sigma), label = m.name, color = color_dict[m.name])
                         
                     else:
                         
@@ -347,3 +369,141 @@ def plot_enrich(metas, ymax = 0.5, alpha = 0.3, features_to_show = featnames, sm
     plt.legend(by_label.values(), by_label.keys(), bbox_to_anchor = (1.5, 1), ncol = ncol)
     #plt.suptitle('Positional Enrichment Result')
     return fig
+
+# show that std is large
+from scipy.ndimage import gaussian_filter, gaussian_filter1d
+def make_concat_xtick(all_meta, features_to_show = featnames):
+    cur_pos = 0
+    xticks=[]
+    xticklabels=[]
+    
+    for feat in features_to_show:
+        for align in ['left', 'right']:
+            flen = all_meta[0].density_array[feat, align, 'rep1'].shape[1]
+        
+
+                
+            if align == 'right':
+                xtick = np.arange(0, flen+1, flen/5)
+                xticklabel = ['{:.0f}'.format(x) for x in np.arange(-flen, 1, flen/5)]
+                
+                
+
+                if feat == 'three_prime_UTR':
+                    xticklabel[-1] = 'TTS'
+                if 'intron' in feat:
+                    xticklabel[-1] = '3\' SS'
+                if feat == 'last_CDS':
+                    xticklabel[-1] = 'stop codon'
+                if 'branchpoint' in feat or 'polyA' in feat: # point features
+                    ax_dict[feat, align, 'rep{}'.format(r+1)].set_xticks(np.arange(0, flen, flen/5))
+                    xticklabel = ['{:.0f}'.format(x) for x in np.arange(0,flen, flen/5)]
+                    xticklabel[0] = feat
+
+
+
+            else:
+                xtick=np.arange(0, flen, flen/5)
+                xticklabel = ['{:.0f}'.format(x) for x in np.arange(0,flen, flen/5)]
+                
+                if feat == 'five_prime_UTR':
+                    xticklabel[0] = 'TSS'
+                if 'intron' in feat:
+                    xticklabel[0] = '5\' SS'
+                if feat == 'first_CDS':
+                    xticklabel[0] = 'start codon'
+                if 'branchpoint' in feat or 'polyA' in feat: # point features
+                    ax_dict[feat, align, 'rep{}'.format(r+1)].set_xticks(np.arange(0, flen+1, flen/5))
+                    xticklabel = ['{:.0f}'.format(x) for x in np.arange(-flen, 1, flen/5)]
+                    xticklabel[-1] = feat
+
+
+            xticks.append(xtick+cur_pos)
+            xticklabels += xticklabel
+            
+            cur_pos += flen
+                
+    
+    
+    return np.concatenate(xticks), xticklabels
+
+
+def plot_mean_density_concat(metas, ymax = 0.001, alpha = 0.3, plot_std = True, stat = 'mean', 
+features_to_show = featnames, smooth = False, color_dict = None, mask = False, ylabel = None,
+                            sigma = 5, figsize = (7,3)):
+    ''' get a bunch of eCLIPs, plot their mean density'''
+    f,ax = plt.subplots(figsize = figsize)
+    ax.set_ylim(0, ymax)
+    
+    
+    for m in metas:
+        i=0
+        if isinstance(m, Metatruncate):
+            den_arr = m.density_array
+        elif isinstance(m, Metadensity):
+            den_arr = m.density_array
+        elif isinstance(m, PosEnrichResult):
+            if mask:
+                den_arr = m.masked
+            else:
+                den_arr = m.stat
+        else:
+            print('Feeding wrong object {}. Only accept Metadensity or Metatruncate'.format(type(m)))
+        
+        # get values
+        density_concat = np.concatenate([m.concat_density_array(features = features_to_show, rep = r) for r in m.eCLIP.rep_keys], axis = 0)
+        
+        if smooth:
+            density_concat = np.apply_along_axis(arr=density_concat, axis = 1, func1d=gaussian_filter1d, **{'sigma': sigma})
+        
+        if stat == 'mean':
+            md = np.nanmean(density_concat,axis = 0)
+        if stat == 'median':
+            md = np.nanmedian(density_concat,axis = 0)
+        
+        
+        std = np.nanstd(density_concat, axis = 0)
+        n = density_concat.shape[0]
+        sem = std/np.sqrt(n)
+        
+        if color_dict:
+            ax.plot(md, color = color_dict[m.name],label = m.name)
+        else:
+            ax.plot(md, label = m.name)
+    
+        if plot_std:
+            if color_dict:
+                ax.fill_between(np.arange(len(md)), md-sem, md+sem, label = m.name, alpha = alpha, color = color_dict[m.name])
+            else:
+                ax.fill_between(np.arange(len(md)), md-sem, md+sem, label = m.name, alpha = alpha)
+        
+        
+        
+        
+        
+        if ylabel:
+            ax.set_label(ylbl)
+        else:
+            if m.background_method == 'relative information':
+                ylbl = '{} relative information'.format(stat)
+            elif m.background_method == None:
+                ylbl = '{} IP'.format(stat)
+            else:
+                ylbl = '{} subtracted '.format(stat)
+
+            if m.normalize:
+                ylbl += ' normalized density'
+            else:
+                ylbl += ' raw'
+            ax.set_ylabel(ylbl)
+
+                
+    # xticks
+    xticks, xticklabels = make_concat_xtick(metas, features_to_show = features_to_show)
+    print()
+    ax.set_xticks(xticks)
+    ax.set_xticklabels(xticklabels, rotation = 90)
+                
+    
+    ax.legend(bbox_to_anchor = (1.5, 1))
+    return f
