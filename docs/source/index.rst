@@ -3,15 +3,49 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to Metadensity's documentation!
+Tutorials
 =======================================
 
 .. toctree::
-   :maxdepth: 4
-   :caption: Contents:
+   :maxdepth: 2
+   :caption: Basic Tutorials
 
-   metadensity
-   0_customize_feature_example_miRNA_host_gene
+   1_Example_on_HNRNPC_RPS3_RBFOX_LIN28
+   prep_data
+
+.. toctree::
+   :maxdepth: 2
+   :caption: More example
+
+   1_Example_on_SF3B4
+   prep_data
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Advanced Feature - customized feature
+   
+   0_customize_feature_example_intronic_polyA.ipynb
+   0_customize_feature_example_miRNA_host_gene.ipynb
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Advanced Feature - Specific groups of transcripts
+   
+   deseq_metaden
+
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Precomputing Data
+
+   Heatmap_from_precomputed_data
+   
+Contents
+==================
+
+metadensity
+modules
+
 
 Indices and tables
 ==================
