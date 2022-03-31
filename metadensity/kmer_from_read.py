@@ -1,6 +1,6 @@
 
-from .truncation import read_start_sites
-from .sequence import get_truncation_seq, simulate_kmer_background, kmer_zscore
+from metadensity.truncation import read_start_sites
+from metadensity.sequence import get_truncation_seq, simulate_kmer_background, kmer_zscore
 import pandas as pd
 
 def get_all_site_seq(bam, chrom = 'chr1', start = 0, end = 248956422, strand = '+', window = 25,  single_end = False, read2 = True):

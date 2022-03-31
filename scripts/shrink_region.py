@@ -1,4 +1,5 @@
-from metadensity.shrink_region import *
+from metadensity.config import settings
+
 from optparse import OptionParser
 def option_parser():
     ''' return parser
@@ -31,6 +32,7 @@ Clustering algorithm is DBSCAN
     parser.add_option("--cluster_size", "-c", dest="size", help="cluster_size", default = 30, type = "int")
     parser.add_option("--ri", "-r", dest="ri", help="use RI", action = "store_true", default = False)
     parser.add_option("--use_read1", dest="read2", help="use read1's trunction sites", action = "store_false", default = True)
+    parser.add_option("--genomefa", dest="genomefa", help="fasta file for entire genomic sequence", default = '/home/hsher/gencode_coords/GRCh38.p13.genome.fa')
     
     
     
@@ -38,8 +40,17 @@ Clustering algorithm is DBSCAN
     return parser
 
 if __name__ == "__main__":
+    
+
     parser = option_parser()
     (options, args) = parser.parse_args()
+
+    # settings point to appropriate coordinates
+    settings.fasta=options.genomefa
+
+    from metadensity.shrink_region import *
+
+
     # call main
     if options.tsv:
         print('Using Evan enrichment')

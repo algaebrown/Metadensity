@@ -12,34 +12,15 @@ from collections import Counter, defaultdict
 import deepdish as dd
 
 
-from .readdensity import ReadDensity
-from .truncation import read_start_sites
-from . import settings
-transcript = BedTool(os.path.join(settings.root_dir, settings.transcript_fname))
-gencode_feature = BedTool(os.path.join(settings.root_dir, settings.gencode_feature_fname))
-print('Using: ', os.path.join(settings.root_dir, settings.transcript_fname))
+from metadensity.readdensity import ReadDensity
+from metadensity.truncation import read_start_sites
+# from . import settings
+from metadensity.config import settings
+transcript = BedTool(settings.transcript_fname) #TODO
+gencode_feature = BedTool(settings.gencode_feature_fname)
+print('Using: ', settings.transcript_fname)
 
-####################### smoothing #######################################
-def gaussian_smooth(mean:np.array, sigma:float = 5) -> np.array:
-    """use gaussian kernel to smooth spiky data, sigma = stf 
 
-    Args:
-        mean (np.array): [values to smooth]
-        sigma (int, optional): [sigma for smoothing]. Defaults to 5.
-
-    Returns:
-        [np.array]: [smoothed values]
-    """
-    y_vals = mean
-    x_vals = np.arange(len(mean))
-    
-    smoothed_vals = np.zeros(y_vals.shape)
-    for x_position in x_vals:
-        kernel = np.exp(-(x_vals - x_position) ** 2 / (2 * sigma ** 2))
-        kernel = kernel / sum(kernel)
-        smoothed_vals[x_position] = sum(y_vals * kernel)
-    return smoothed_vals
-        
 class STAMP:
     """
     STAMP object to contain edit sites
@@ -153,7 +134,7 @@ class eCLIP:
             print('Warning: No IDR file input, falling back to using peaks from rep {}'.format(self.rep_keys[0]))
 
     ##################### FOR ENCODE DATA USE ONLY ###################################
-    def enough_transcripts(self, coord = transcript, thres = 200, key = 'rep1'):
+    def enough_transcripts(self, coord = transcript, thres = 200, key = 'rep1', attr_to_return = 'ID'):
         """[Filter for transcript id that has enough reads in IP]
 
         Args:
@@ -168,12 +149,50 @@ class eCLIP:
         enough_read = set()
         for t in coord:
             if len(list(self.read_densities[key].bam.fetch(t.chrom, t.start,t.end))) > thres:
-                enough_read.add(t.attrs['ID'])
+                enough_read.add(t.attrs[attr_to_return])
         return enough_read
-       
-    
+    def enough_coverage_transcript(self, coord = transcript, thres = 0.001, key = 'rep1', attr_to_return = 'ID'):
+        """[Filter for transcript id that has enough coverage in IP library]
+
+        Args:
+            coord ([BedTool], optional): [The intervals to count number of reads. For example, if set to transcript, 
+            will return transcript id with at least "thres" reads. Has to be in gff3. Check if interval.attrs['ID'] exist. ]. Defaults to transcript.
+            thres (int, optional): [the number of reads]. Defaults to 200.
+            key (str, optional): [library to look at. Set to any keys in self.read_densities]. Defaults to rep1.
+
+        Returns:
+            [list]: [list of interval ids]
+        """
+        enough_read = set()
+        for t in coord:
+            coverage=len(list(self.read_densities[key].bam.fetch(t.chrom, t.start,t.end)))/(t.end-t.start)
+            if coverage > thres:
+                enough_read.add(t.attrs[attr_to_return])
+        return enough_read
+    def calculate_coverage(self, coord = transcript):
+        """[Calculate coverage for all bams for intervals in coord]
+        Args:
+            coord ([BedTool], optional): [The intervals to count number of reads. For example, if set to transcript, 
+        Returns:
+            coveragedf
+        """
+        bam_fnames = []
+        libs = list(self.read_densities.keys())
+        for key in libs:
+            bam_fnames.append(self.read_densities[key].bam.filename.decode('ascii')) #byte from pysam
+            
+        read_count = coord.multi_bam_coverage(bams=bam_fnames, s = True).to_dataframe()
+        columns = list(read_count.columns)
+
         
-        
+        columns[-len(libs):]= libs
+        read_count.columns = columns
+
+        read_count['length'] = read_count['end']-read_count['start']
+
+        read_count[[f'{l}_rpk' for l in libs]]=read_count[libs].div(read_count['length'], axis = 0)*1000
+        # calculate read per bp
+        return read_count
 ### Metadensity
 
 class Meta:
@@ -275,7 +294,7 @@ class Meta:
         for feature in self.featnames:
             for align in ['left', 'right']:
                 flen = settings.feat_len[feature]
-                self.get_feature_density_array(feature, flen , align, use_quantile = use_quantile, use_truncation = use_truncation)
+                self.get_feature_density_array(feature, flen , align, use_truncation = use_truncation)
     def concat_density_array(self, rep = 'rep1', features = ['exon', 'intron']):
         """[concatenate density array along specified features. For examples, exon is (n * 200), intron is (n * 500), then the concat array will be (n * 700)]
 
@@ -440,7 +459,13 @@ class Metadensity(Meta):
         
 
 ########################## Metagene class #####################################
+class Window:
+    def __init__(self, start, end):
+        self.start = start
+        self.end = end
 
+        self.start_name = None # set for plotting
+        self.end_name = None
 class Metagene:
     """[A class to hold a gene and its feature]
     """
@@ -546,7 +571,16 @@ class Metagene:
                 concat_val.append(value[relative[0]: relative[1]]) # don't need to +1
         return np.concatenate(concat_val)
     
-    def create_feature(self, interval, feature_name):
+    def concat_density(self, uID, rep, truncation = False):
+        ''' since some feature would have left/right, we need a special function to return concat density '''
+        if truncation:
+            left_densities = [feat[0] if type(feat) == tuple else feat for feat in self.truncations[uID][rep].values()]
+        else:
+            
+            left_densities = [feat[0] if type(feat) == tuple else feat for feat in self.densities[uID][rep].values()]
+        return np.concatenate(left_densities)
+
+    def create_feature(self, interval, feature_name, length=50):
         """[create new feature in metagene]
 
         Args:
@@ -572,6 +606,7 @@ class Metagene:
                 int(interval)
                 )
         self.featnames.append(feature_name)
+        settings.feat_len[feature_name] = length
     def create_downstream_feature(self, query_interval, feature_type = 'intron', feature_name = 'terminal_exon'):
         """[create closest, 3' feature of the query interval
         for example, intron list: (100,200), (400,500), (700,900), query exon (500,700), return (700,900) if '+' else (400,500)]
@@ -594,6 +629,7 @@ class Metagene:
             else:
                 if o[1]<= query_interval[0]:
                     next_feat = o
+                    break
         try:
             self.create_feature(next_feat, f'{feature_name}_downstream_{feature_type}')
             
@@ -622,12 +658,30 @@ class Metagene:
             else:
                 if o[0]>= query_interval[1]:
                     next_feat = o
+                    break
         try:
             self.create_feature(next_feat, f'{feature_name}_upstream_{feature_type}')
             
         except:
             self.featnames.append(f'{feature_name}_upstream_{feature_type}')
+    
+    def to_relative_axis(self, interval):
+        """[convert absolute genome position to relative axis, 0=five prime end of transcript/gene. Ex: self.start = 1000, self.stop = 5000, self.strand = -, interval = (1000,1005)
+        return (5000-1005, 5000-1000) = (3995, 4000)
+        if strand +, (1000-1000, 1005-1000)]
+
+        Args:
+            interval ([tuple]): [tuple of (int, int), absolute genome position]
+
+        Returns:
+            [tuple]: [relative position of that interval, tuple of (int, int)]
+        """
         
+        if self.strand == '-':
+            relative_feature = (self.stop - interval[1], self.stop - interval[0])
+        else:
+            relative_feature = (interval[0]-self.start, interval[1] - self.start)
+        return relative_feature
 
     ################################## about raw values ###########################################
     def truncation_count(self, eCLIP, rep, interval):
@@ -679,7 +733,8 @@ class Metagene:
         
         rpm = np.nan_to_num(eCLIP.read_densities[rep].values(self.chrom, interval[0], interval[1], self.strand),0)
         # the Read density object takes care of strandedness
-        if self.strand == '-' and rpm < 0: ## default the values are negative for those from the eCLIP bigwigs
+        if self.strand == '-' and np.any(rpm<0): ## default the values are negative for those from the eCLIP bigwigs
+            #TODO
             rpm = -rpm
         
         return rpm
@@ -724,6 +779,7 @@ class Metagene:
         method = 'subtract': subtract IP from Input
         method = 'subtract normal': subtract IP distribution from Input distribution
         method = 'relative information': take relative entropy
+        method = 'fold change': log2(IP/IN)
         method = 'get null': get input density]
 
         Args:
@@ -763,7 +819,8 @@ class Metagene:
                 values = raw/np.sum(raw) - control_raw/np.sum(control_raw)
             # replace negative value with 0
             values[values < 0] = 0
-        if method == 'relative information':
+            
+        if method == 'relative information' or method == 'fold change':
             # handle 0, add pseudocount
             
             if truncate:
@@ -791,84 +848,25 @@ class Metagene:
             
             
 
-
-            values = np.multiply(
-                ip_norm,
-                np.log2(np.divide(ip_norm, input_norm))
-                ) # pi * log2(pi/qi)
+            if method == 'relative information':
+                values = np.multiply(
+                    ip_norm,
+                    np.log2(np.divide(ip_norm, input_norm))
+                    ) # pi * log2(pi/qi)
+            elif method == 'fold change':
+                values = np.log2(np.divide(ip_norm, input_norm))
         if method == None:
             values = raw # do nothing with background
         
         return values   
     
-    ################################## about axis ###########################################    
-    def to_relative_axis(self, interval):
-        """[convert absolute genome position to relative axis, 0=five prime end of transcript/gene. Ex: self.start = 1000, self.stop = 5000, self.strand = -, interval = (1000,1005)
-        return (5000-1005, 5000-1000) = (3995, 4000)
-        if strand +, (1000-1000, 1005-1000)]
-
-        Args:
-            interval ([tuple]): [tuple of (int, int), absolute genome position]
-
-        Returns:
-            [tuple]: [relative position of that interval, tuple of (int, int)]
-        """
-        
-        if self.strand == '-':
-            relative_feature = (self.stop - interval[1], self.stop - interval[0])
-        else:
-            relative_feature = (interval[0]-self.start, interval[1] - self.start)
-        return relative_feature
     
     ################################## about annotation ###########################################
-    def multi_feature_avg(self, intervals, values, align = 'left', max_len = None):
-        """[average and align (zero padding) multiple intron/exon
-        feature: list of intervals for multiple exons/cds/intron; ex: [(1,100), (2,950)]
-        values: 5' to 3' processed value (remove background, normalize) of the whole gene
-        align: align feature of different length to the left or right
-        return: average feature (np.array)]
-
-        Args:
-            intervals ([list]): [list of tuples, each tuple is a interval]
-            values ([np.array]): [values of window from]
-            align (str, optional): ['left' or 'right', 5 prime=left]. Defaults to 'left'.
-            max_len ([int], optional): [description]. Defaults to None.
-
-        Returns:
-            [type]: [description]
-        """
-        all_feature_values = []
-        # feature length
-        if max_len == None:
-            if type(list(intervals)[0]) == int:
-                max_len = settings.point_feature_len*2
-            else:
-                max_len = max([f[1]-f[0] for f in intervals])
-        
-        for f in intervals:
-            if type(f) == int: # point feature
-                f = (f-settings.point_feature_len, f+settings.point_feature_len) # single point feature (x-50, x+50)
-
-            axis = self.to_relative_axis(f)
-            feature_values = values[int(axis[0]):int(axis[1])] # window around
-            all_feature_values.append(trim_or_pad(feature_values, max_len, pad_value = np.nan, align = align)) # pad to the same length then append
-        
-        
-        
-        feature_average  = np.nanmean(np.stack(all_feature_values), axis = 0)
-        return feature_average
-        
+    
     
 
         
-    def concat_density(self, uID, rep, truncation = False):
-        ''' since some feature would have left/right, we need a special function to return concat density '''
-        if truncation:
-            left_densities = [feat[0] if type(feat) == tuple else feat for feat in self.truncations[uID][rep].values()]
-        else:
-            
-            left_densities = [feat[0] if type(feat) == tuple else feat for feat in self.densities[uID][rep].values()]
-        return np.concatenate(left_densities)
+    
         
 
     def get_value(self, eCLIP, background_method = 'subtract', normalize = True, truncate = True):
@@ -915,6 +913,59 @@ class Metagene:
                 pass
             
             self.value[eCLIP.uID][rep] = values
+    
+    def window_feature(self, start, end, values):
+        """[slice from self.value] 
+        start: int, relative position of window
+        end: int, relative end position
+        sometimes there are window outside of gene length (from point feature)
+        """
+        if start >=0 and end <= len(values):
+            return values[start:end]
+        elif start < 0:
+            
+            valid_values = values[:end]
+            pad = [np.nan]*((end-start)-len(valid_values))
+            return np.array(pad + list(valid_values))
+        elif end > len(values):
+            #print('padding to length')
+            valid_values = values[start:]
+            pad = [np.nan]*((end-start)-len(valid_values))
+            return np.array(list(valid_values)+pad)
+
+    def multi_feature_avg(self, intervals, values, align = 'left', max_len = None):
+        """[average and align (zero padding) multiple intron/exon
+        feature: list of intervals for multiple exons/cds/intron; ex: [(1,100), (2,950)]
+        values: 5' to 3' processed value (remove background, normalize) of the whole gene
+        align: align feature of different length to the left or right
+        return: average feature (np.array)]
+
+        Args:
+            intervals ([list]): [list of tuples, each tuple is a interval]
+            values ([np.array]): [values of window from]
+            align (str, optional): ['left' or 'right', 5 prime=left]. Defaults to 'left'.
+            max_len ([int], optional): [description]. Defaults to None.
+
+        Returns:
+            [type]: [description]
+        """
+        all_feature_values = []
+        # feature length
+        if max_len == None:
+            
+            
+            max_len = max([f[1]-f[0] for f in intervals])
+        
+        for f in intervals:
+
+            axis = self.to_relative_axis(f)
+            feature_values = self.window_feature(start = int(axis[0]),end = int(axis[1]), values = values)
+            all_feature_values.append(trim_or_pad(feature_values, max_len, pad_value = np.nan, align = align)) # pad to the same length then append
+        
+        
+        
+        feature_average  = np.nanmean(np.stack(all_feature_values), axis = 0)
+        return feature_average
         
     def get_average_feature(self, eCLIP, background_method = 'subtract', normalize = True, truncate = True):
         """[fetching values for each feature, also averaging them if needed 
@@ -956,18 +1007,20 @@ class Metagene:
                 elif len(feature) == 1: ### The feature only appears once
                     feature = list(feature)[0]
                     if type(feature) == int: # single point feature
-                        feature = (feature-settings.point_feature_len, feature + settings.point_feature_len) # extend a window for it #TODO make customizable
+                        feature = (feature-settings.feat_len[fname], feature + settings.feat_len[fname]) # extend a window for it 
                     axis = self.to_relative_axis(feature)
                 
-                    
-                    minus1 = values[int(axis[0]): int(axis[1])]
+                    minus1 = self.window_feature(start = int(axis[0]),end = int(axis[1]), values = values)
                     to_save[eCLIP.uID][rep][fname] = minus1
                 
                 else: ### The feature only appears multiple time
-                    if type(feature) == int: # single point feature
-                        # no issue with alignment, single point feature always have the same length
+                    if type(list(feature)[0]) == int:
+                        # convert point feature to length
+                        feature = [(f-settings.feat_len[fname], f + settings.feat_len[fname])
+                                    for f in list(feature)]
                         left_mean = self.multi_feature_avg(feature, values, align = 'left') 
-                        to_save[eCLIP.uID][rep][fname] = (left_mean, left_mean)
+                        to_save[eCLIP.uID][rep][fname] = left_mean
+
                     else:
                         left_mean = self.multi_feature_avg(feature, values, align = 'left') 
                         right_mean = self.multi_feature_avg(feature, values, align = 'right')
@@ -1133,28 +1186,7 @@ def trim_or_pad(density, target_length, align = 'left', pad_value = 0):
         return density
 
 
-######################################## Probability Distribution #########################################
-def bind_strength_discretize(density_array, bins = 8, ymax = 0.03):
-    ''' given density array(sample * length of feature), count discretization'''
-    pseudocount = [np.histogram(d[~np.isnan(d)], range = (0, ymax), bins = bins)[0] + 1 for d in density_array.T] # pseudocount 
-    den_prob = np.stack([p/np.sum(p) for p in pseudocount]).T
-    
-    return den_prob
 
-def pos_spec_bind_strength(eCLIP, peak_max = 0.03, bins = 20, use_quantile = False, use_scaled = False):
-    ''' return probability distribution on \"binding stregth/normalized peak height\" for each position'''
-    bind_strength = {}
-    
-    if use_quantile:
-        den_array = eCLIP.qdensity_array
-    if use_scaled:
-        den_array = eCLIP.scaled_density_array
-    
-    else:
-        den_array = eCLIP.density_array
-    for k in den_array.keys():
-        bind_strength[k] = bind_strength_discretize(den_array[k], bins = bins, ymax = peak_max)
-    return bind_strength
 ######################################### Relative entropy ##########################################
 
 

@@ -10,6 +10,7 @@ shape_data_dir = {'ENCODE':{'K562':os.path.join(encode_shape_dir, 'ENCFF161UHZ.t
                             'HepG2':os.path.join(zhang_shape_dir, 'GSM4333262_HepG2.out.txt')
                             }
                 }
+
 class SHAPE_data:
     def __init__(self, cell_line):
         self.plus = pyBigWig.open('/home/hsher/icshape_data_zhang/icSHAPE/{}-plus.bw'.format(cell_line))
@@ -30,6 +31,15 @@ class SHAPE_data:
         if strand == '-':
             values = values[::-1]
         return values
+
+class fSHAPE_data(SHAPE_data):
+    def __init__(self, cell_line, treatment, rep):
+        self.plus = pyBigWig.open(f'/home/hsher/fshape_raw/CITS/{cell_line}_{treatment}{rep}.plus.bw')
+        self.minus = pyBigWig.open(f'/home/hsher/fshape_raw/CITS/{cell_line}_{treatment}{rep}.minus.bw')
+        self.cell_line = cell_line
+        self.treatment = treatment
+        self.rep = rep
+
 
 def read_icshape(fname):
     ''' read icSHAPE data from tsv file 

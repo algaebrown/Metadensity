@@ -10,10 +10,11 @@ import seaborn as sns
 import numpy as np
 import pandas as pd
 import sys
-from .metadensity import *
-from .pos_enrich import PosEnrichResult
+from metadensity.metadensity import *
+from metadensity.pos_enrich import PosEnrichResult
+from metadensity.config import settings
 import math
-from . import settings
+# from . import settings
 #################### generate axis ###################################
 featnames = ['exon', 'intron']
 ax_width_dict = settings.ax_width_dict
@@ -121,7 +122,7 @@ def get_xticklabels(feat, align, n_tick = 5):
         
         if feat == 'three_prime_UTR':
             xticklabel[-1] = 'TTS'
-        if 'intron' in feat:
+        if 'intron' in feat.split('_')[-1]:
             xticklabel[-1] = '3\' SS'
         if feat == 'last_CDS':
             xticklabel[-1] = 'stop codon'
@@ -134,7 +135,7 @@ def get_xticklabels(feat, align, n_tick = 5):
         xticklabel = ['{:.0f}'.format(x) for x in np.arange(0,flen, flen/5)]
         if feat == 'five_prime_UTR':
             xticklabel[0] = 'TSS'
-        if 'intron' in feat:
+        if 'intron' in feat.split('_')[-1]:
             xticklabel[0] = '5\' SS'
         if feat == 'first_CDS':
             xticklabel[0] = 'start codon'

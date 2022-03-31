@@ -1,15 +1,15 @@
-from pybedtools import BedTool
-import pysam
+# from pybedtools import BedTool
+# import pysam
 
 from collections import Counter
 import numpy as np
-from scipy.stats import expon, binom
-from sklearn.cluster import DBSCAN
+# from scipy.stats import expon, binom
+# from sklearn.cluster import DBSCAN
 import pandas as pd
 import math
 import sys
 
-from .sequence import *
+from metadensity.sequence import *
 
 def fetch_reads(bam_fileobj, interval = None, chrom = None, start = None, end = None, strand = None, single_end = False, read2 = True):
     ''' fetch reads by pysam.fetch, but strand specific '''

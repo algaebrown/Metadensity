@@ -1,1 +1,1 @@
-from .config import settings
+from metadensity.config import settings

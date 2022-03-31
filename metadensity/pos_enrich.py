@@ -1,4 +1,4 @@
-from .metadensity import *
+from metadensity.metadensity import *
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np

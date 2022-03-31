@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.stats import ks_2samp
-from .truncation import  truncation_relative_axis, read_start_sites
-from .metadensity import gaussian_smooth
+from metadensity.truncation import  truncation_relative_axis, read_start_sites
+from metadensity.metadensity import gaussian_smooth
 import deepdish as dd
 
 
