@@ -13,10 +13,9 @@ import os
 print(f'using {settings.fasta}')
 fasta = pysam.FastaFile(settings.fasta)
 
-# basic function to fetch sequence strand specific ways
-
 def getRNAsequence(interval, fasta = fasta):
     ''' fetch RNA sequence from bedtool interval'''
+    
     seq = fasta.fetch(reference = interval.chrom, start=interval.start, end=interval.stop)
     
     if interval.strand == '-':
