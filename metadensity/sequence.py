@@ -6,10 +6,12 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import random
 import math
+from metadensity.config import settings
+import os
 
 # human genome here
-genome='/home/hsher/gencode_coords/GRCh38.p13.genome.fa'
-fasta = pysam.FastaFile(genome)
+print(f'using {settings.fasta}')
+fasta = pysam.FastaFile(settings.fasta)
 
 # basic function to fetch sequence strand specific ways
 
