@@ -22,10 +22,11 @@ setup(
                         'matplotlib >= 3.1.3',
                         'pybedtools >= 0.8.1',
                         'pandas >= 1.0.2',
-                        'pybigwig >= 0.3.17',
-                        'seaborn >= 0.10.0',
-                        'biopython >= 1.77',
-                        'scikit-learn >= 0.22.1'
+                        'pybigwig,
+                        'seaborn,
+                        'biopython',
+                        'scikit-learn',
+                        'deepdish'
                         ],
       
     setup_requires = ["setuptools_git >= 0.3",],
