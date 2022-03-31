@@ -1,17 +1,18 @@
 # Metadensity
 Visualize eCLIP/STAMP metagene density to predict RNA binding protein function
+[Read the Doc] https://metadensity.readthedocs.io/en/latest/
 
 # Install
+The environment is available at [DockerHub](https://hub.docker.com/repository/docker/algaebrown/metadensity)
 ```
 git clone https://github.com/algaebrown/Metadensity.git
 cd Metadensity
 # build your own environment!
-conda create -n Metadensity
+conda create -n Metadensity --file environment.yaml
 conda activate Metadensity
 # copy genome coordinate
-cd metadensity
-cp /home/hsher/Metadensity/metadensity/data . # only work in TSCC
-python setup.py install # install
+cd Metadensity
+pip install -e .
 ```
 
 # Four simple steps to create your density
