@@ -11,9 +11,6 @@ setup(
     packages = find_packages(),
     
     package_dir = {'metadensity': 'metadensity'},
-    package_data = {
-        'metadensity' : ['data/*/*']
-        },
 
     install_requires = ['setuptools', 
                         'pysam >= 0.15.4',
@@ -22,8 +19,8 @@ setup(
                         'matplotlib >= 3.1.3',
                         'pybedtools >= 0.8.1',
                         'pandas >= 1.0.2',
-                        'pybigwig,
-                        'seaborn,
+                        'pybigwig',
+                        'seaborn',
                         'biopython',
                         'scikit-learn',
                         'deepdish'
