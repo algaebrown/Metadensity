@@ -68,7 +68,7 @@ Here we provide some [test data](https://www.dropbox.com/s/cgkeuqr0cjif558/test_
 ```
 cd Metadensity
 # download the data
-wget https://www.dropbox.com/s/cgkeuqr0cjif558/test_data.tar.gz?
+wget https://www.dropbox.com/s/cgkeuqr0cjif558/test_data.tar.gz
 
 # uncompress
 tar -xvzf test_data.tar.gz
@@ -77,7 +77,7 @@ tar -xvzf test_data.tar.gz
 nano test_data/menifest.csv
 
 # run
-python scripts/run_metadensity_vanilla.py -i test_data/menifest.csv -u SF3B4_test -o test_data
+python scripts/run_metadensity_vanilla.py -i test_data/menifest.csv -u SF3B4_test -o test_data --config=config/hg38.ini
 ```
 
 
