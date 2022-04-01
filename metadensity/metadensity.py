@@ -58,7 +58,6 @@ class eCLIP:
     def from_series(cls, series, single_end = True, read2 = True):
         """[build eCLIP object from series containing absolute path for .bam, .bw, .beds,
         ]
-
         Args:
             series ([pd.Series]): [RBP for name; uid for uID.
         bam_0, bam_1, bam_control (or bam_control_0, bam_control_1);
@@ -69,7 +68,6 @@ class eCLIP:
         If only 1 SMInput, simply omit _0. use bam_control, plue_control...etc]
             single_end (bool, optional): [if your CLIP is done in single end set to True else Metatruncate will have problem]. Defaults to True.
             read2 (bool, optional): [Use read 2 only if sequencing is paired-end.]. Defaults to True.
-
         Returns:
             [eCLIP]: [a object that holds eCLIP data]
         """
@@ -122,7 +120,6 @@ class eCLIP:
 
     
     def find_idr_transcript(self, genome_coord = transcript):
-        
         """[find transcript containing at least 1 IDR peak]
         Kwargs:
             genome_coord: (BedTool) transcript coordintae. default are canonical transcripts.

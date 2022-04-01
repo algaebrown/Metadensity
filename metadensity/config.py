@@ -8,6 +8,42 @@ class MetadensityConfig:
 
     def __init__(self):
         print('please set the right config according to genome coordinate')
+        self.from_config_file('../config/hg38.ini')
+        print(f'Using HG38 by default')
+
+        self.feat_len = {'five_prime_UTR':100,  ####### generic DNA
+                        'three_prime_UTR':150, 
+                        'intron':500,
+                        'exon':100,
+                        'first_exon':100,
+                        'last_exon': 100,
+                        'CDS': 100, ######## protein coding
+                        'first_CDS': 100,
+                        'last_CDS':100,
+                        '3p_duplex': 20, ############ miR
+                        '5p_duplex': 20,
+                        'mature': 20,
+                        'hairpin':10,
+                        'pri_mir': 500, 
+                        'start_codon':3,
+                        'stop_codon':3,
+                        'branchpoint':50,
+                        'branchpoint_pred':50,
+                        'full_CDS':200}
+        self.point_feature_len=50
+        self.feat_len = defaultdict(lambda: self.point_feature_len, self.feat_len)
+        
+        
+        self.ax_width_dict = {'UTR':1,
+                'exon':2,
+                'intron':3,
+                'CDS':2,
+                'duplex':2,
+                'mature':2,
+                'hairpin':2,
+                'branchpoint':2}
+        self.ax_width_dict = defaultdict(lambda: 2, self.ax_width_dict)
+
     def from_config_file(self, filename):
         cps = configparser.ConfigParser()
         cps.read(filename)
