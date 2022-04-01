@@ -24,7 +24,7 @@ These information are genome coordinate, species dependent. So you can keep each
 | GENCODE          | gff3 annotation of exon, intron, gene, transcripts etc                                   | https://www.gencodegenes.org/human/                                                         | YES              |
 | BRANCHPOINT      | branchpoint annotation                                                                   | https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4315302/                                       | NO               |
 | BRANCHPOINT_PRED | machine learning predicted branchpoints                                                  | https://pubmed.ncbi.nlm.nih.gov/29092009/                                                   | NO               |
-| POLYA            | annotation of polyA sites and signals from polyASite                                     | https://www.google.com/search?client=firefox-b-1-d&q=polyA.atlas.clusters.2.0.GRCh38.96.bed | NO               |
+| POLYA            | annotation of polyA sites and signals from polyASite                                     | https://polyasite.unibas.ch/atlas | NO               |
 | MIRNA            | annotation of microRNA                                                                   | https://www.mirbase.org/                                                                    | NO               |
 | SNORNA           | annotation of snoRNA                                                                     | http://scottgroup.med.usherbrooke.ca/snoDB/                                                 | NO               |
 | LNCRNA           | annotation of lncRNA                                                                     | https://lncipedia.org/                                                                      | NO               |
@@ -33,6 +33,8 @@ These information are genome coordinate, species dependent. So you can keep each
 | DATADIR          | parsed information of above, python .pickle file                                         | https://www.dropbox.com/sh/hoya37n9pmuqd4l/AABBSpcpjFYIUFWMdIRuJtU4a?dl=0                   |                  |
 
 
+## Advanced usage:
+if you are using some coordinate that we don't have precomputed "DATADIR", please check out [this notebook](https://github.com/algaebrown/Metadensity/blob/master/docs/source/parse_gencode_coords_into_data.ipynb) on how to build one yourself.
 
 # Step 2: Command line usage: the most vanilla functions
 `python scripts/run_metadensity_vanilla.py -h`
