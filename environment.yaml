@@ -171,5 +171,5 @@ dependencies:
   - biopython=1.78
   - scikit-learn
   - seaborn
-  - pybedtool
+  - pybedtools
 prefix: /home/hsher/miniconda3/envs/metadensity
