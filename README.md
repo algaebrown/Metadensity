@@ -8,7 +8,7 @@ The environment is available at [DockerHub](https://hub.docker.com/repository/do
 git clone https://github.com/algaebrown/Metadensity.git
 cd Metadensity
 # build your own environment!
-conda create -n Metadensity --file environment.yaml
+conda env create -n Metadensity --file environment.yaml
 conda activate Metadensity
 # copy genome coordinate
 cd Metadensity
