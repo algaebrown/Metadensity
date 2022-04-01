@@ -10,12 +10,11 @@ from metadensity.config import settings
 import os
 
 # human genome here
-print(f'using {settings.fasta}')
-fasta = pysam.FastaFile(settings.fasta)
 
-def getRNAsequence(interval, fasta = fasta):
+
+def getRNAsequence(interval):
     ''' fetch RNA sequence from bedtool interval'''
-    
+    fasta = pysam.FastaFile(settings.fasta)
     seq = fasta.fetch(reference = interval.chrom, start=interval.start, end=interval.stop)
     
     if interval.strand == '-':
@@ -27,8 +26,9 @@ def getRNAsequence(interval, fasta = fasta):
     
     return seq
 
-def get_truncation_seq(chrom, start, strand, window = 10 , fasta = fasta):
+def get_truncation_seq(chrom, start, strand, window = 10):
     ''' get sequence around window of truncation site'''
+    fasta = pysam.FastaFile(settings.fasta)
     seq = fasta.fetch(reference = chrom, start=start - window, end = start+window)
     if strand == '-':
         
@@ -39,8 +39,9 @@ def get_truncation_seq(chrom, start, strand, window = 10 , fasta = fasta):
         seq = Seq(seq).transcribe()
     
     return seq
-def get_interval_seq(chrom, start, end, strand, fasta = fasta):
+def get_interval_seq(chrom, start, end, strand):
     ''' get sequence around interval'''
+    fasta = pysam.FastaFile(settings.fasta)
     seq = fasta.fetch(reference = chrom, start=start, end=end)
     
     if strand == '-':
