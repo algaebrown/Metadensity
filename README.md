@@ -79,7 +79,8 @@ tar -xvzf test_data.tar.gz
 nano test_data/menifest.csv
 
 # run
-python scripts/run_metadensity_vanilla.py -i test_data/menifest.csv -u SF3B4_test -o test_data --config=config/hg38.ini
+cd scripts/
+python run_metadensity_vanilla.py -i ../test_data/menifest.csv -u SF3B4_test -o ../test_data --config=../config/hg38.ini
 ```
 
 
