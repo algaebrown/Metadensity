@@ -8,7 +8,7 @@ class MetadensityConfig:
 
     def __init__(self):
         print('please set the right config according to genome coordinate')
-        self.from_config_file('../config/hg38.ini')
+        self.from_config_file('/opt/Metadensity/config/hg38.ini')
         print(f'Using HG38 by default')
 
         self.feat_len = {'five_prime_UTR':100,  ####### generic DNA
