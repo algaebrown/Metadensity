@@ -2,14 +2,15 @@
 import os
 from collections import defaultdict
 import configparser
+from pybedtools import BedTool
 
 # change function
 class MetadensityConfig:
 
     def __init__(self):
         print('please set the right config according to genome coordinate')
-        self.from_config_file('../config/hg38.ini')
-        print(f'Using HG38 by default')
+        self.transcript = None
+        self.gencode_feature = None
 
         self.feat_len = {'five_prime_UTR':100,  ####### generic DNA
                         'three_prime_UTR':150, 
@@ -69,6 +70,12 @@ class MetadensityConfig:
         self.sno = os.path.join(self.datadir, 'snoRNA')
         self.lnc = os.path.join(self.datadir, 'lnc')
         self.trna = os.path.join(self.datadir, 'tRNA')
+
+        # try to load some basics
+        self.transcript = BedTool(self.transcript_fname) #TODO
+        self.gencode_feature = BedTool(self.gencode_feature_fname)
+        print('Using: ', settings.transcript_fname)
+        
 
         
 
