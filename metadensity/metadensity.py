@@ -10,15 +10,16 @@ import sys
 import os
 from collections import Counter, defaultdict
 import deepdish as dd
+import logging
+logger = logging.getLogger(__name__)
 
 
 from metadensity.readdensity import ReadDensity
 from metadensity.truncation import read_start_sites
 # from . import settings
 from metadensity.config import settings
-transcript = BedTool(settings.transcript_fname) #TODO
-gencode_feature = BedTool(settings.gencode_feature_fname)
-print('Using: ', settings.transcript_fname)
+transcript = settings.transcript
+gencode_feature = settings.gencode_feature
 
 
 class STAMP:
@@ -76,13 +77,19 @@ class eCLIP:
         '''
 
         # autodetect SMInput structure
-        if 'bam_control' in series.index:
+        if 'bam_control' in series.index or 'plus_control' in series.index:
             single_control = True
+            logger.info('detected as a single control design')
         else:
             single_control = False
+        
         # autodetect replicate number
         n_reps = len([s for s in series.index if 'bam' in s and 'control' not in s]) # bam_1, bam_0
+        if n_reps == 0:
+            # try detecting from bigwigs
+            n_reps = len([s for s in series.index if 'plus' in s and 'control' not in s]) # bam_1, bam_0
         assert n_reps > 0
+        logger.info(f'detected a total of {n_reps} replicates')
         rep_keys = ['rep{}'.format(n+1) for n in range(n_reps)] # rep1 and rep2
 
         # read densities!
@@ -90,29 +97,45 @@ class eCLIP:
         for i, rep in enumerate(rep_keys):
             pos = series['plus_{}'.format(i)]
             neg = series['minus_{}'.format(i)]
-            bam = series['bam_{}'.format(i)]
+            try:
+                bam = series['bam_{}'.format(i)]
+            except:
+                logger.info(f'did not input bam. cannot use Metatruncate')
+                bam = None
             read_densities[rep] = ReadDensity(pos, neg, name = series['RBP'], bam = bam)
             if not single_control:
                 pos = series['plus_control_{}'.format(i)]
                 neg = series['minus_control_{}'.format(i)]
-                bam = series['bam_control_{}'.format(i)]
+                try:
+                    bam = series['bam_control_{}'.format(i)]
+                except: 
+                    bam = None
                 read_densities['ctrl{}'.format(i+1)] = ReadDensity(pos, neg, name = series['RBP'], bam = bam) # ctrl1, ctrl2 paired with rep1, rep2 ...
         if single_control:
             pos = series['plus_control']
             neg = series['minus_control']
-            bam = series['bam_control']
+            try:
+                bam = series['bam_control']
+            except:
+                logger.info(f'did not input bam. cannot use Metatruncate')
+                bam = None
             read_densities['ctrl'] = ReadDensity(pos, neg, name = series['RBP'], bam = bam)
 
         # peaks
         peaks = {}
         for i, rep in enumerate(rep_keys):
-            peaks[rep] = BedTool(series['bed_{}'.format(i)])
+            try:
+                peaks[rep] = BedTool(series['bed_{}'.format(i)])
+            except:
+                peaks[rep] = None
+                logger.info(f'did not input peak bed files')
         
         # idr
         if 'idr' in series.index:
             idr = BedTool(series['idr'])
         else:
             idr = None
+            logger.info(f'did not input IDR bed files')
 
         return cls(name=series['RBP'], uID=series['uid'], single_end=single_end, rep_keys = rep_keys, read_densities=read_densities, peaks = peaks, idr = idr, read2 = read2)
 
