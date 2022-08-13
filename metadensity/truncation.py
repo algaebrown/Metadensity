@@ -33,13 +33,14 @@ def fetch_reads(bam_fileobj, interval = None, chrom = None, start = None, end = 
     return reads
 
 # fetch read start
-def read_start_sites(bam_fileobj, interval = None, chrom = None, start = None, end = None, strand = None, single_end = False, read2 = True):
+def read_start_sites(bam_fileobj, interval = None, chrom = None, start = None   , end = None, 
+    strand = None, single_end = False, read2 = True, included_diagnostic_events = ['trun', 'mismatch', 'del']):
     ''' return crosslinking events in bedtool interval from bamfile object; strand specific'''
     if single_end:
         # if there is only 1 read, no such read1/read2 issue
         read2=False
     profile = strand_specific_pileup(bam_fileobj, interval = interval, chrom = chrom, start = start, end = end, strand = strand, single_end = single_end, read2 = read2)
-    event_count = profile[['trun', 'mismatch', 'del']].sum(axis = 1)
+    event_count = profile[included_diagnostic_events].sum(axis = 1)
     pos_list = []
     for pos, count in zip(event_count.index.values, event_count.values):
         

@@ -398,7 +398,8 @@ class Metatruncate(Meta):
     Args:
         Meta ([cls]): [inherit from superclass Meta]
     """
-    def __init__(self, eCLIP, name, sample_no = 200, background_method = 'subtract', normalize = True, metagenes = None, transcripts = None, transcript_ids = None, deep_dish_path = None):
+    def __init__(self, eCLIP, name, sample_no = 200, background_method = 'subtract', normalize = True, metagenes = None, 
+    transcripts = None, transcript_ids = None, deep_dish_path = None, **kwargs):
         """[Create a Metatruncate class (using 5 prime read truncation)]
 
         Args:
@@ -418,12 +419,12 @@ class Metatruncate(Meta):
 
         # automatically run
         if not deep_dish_path:
-            self.get_truncation(background_method = background_method, normalize = normalize)
+            self.get_truncation(background_method = background_method, normalize = normalize, **kwargs)
         self.background_method = background_method
         self.normalize = normalize
     
     
-    def get_truncation(self, background_method = 'subtract', normalize = True):
+    def get_truncation(self, background_method = 'subtract', normalize = True, **kwargs):
         """[calculate metadensity for each metagene.
         store density in each metagene object]
 
@@ -431,7 +432,7 @@ class Metatruncate(Meta):
             background_method (str, optional): ['subtract'; 'subtract normal'; 'relative information']. Defaults to 'subtract'.
             normalize (bool, optional): [ True to use % of edits in position; False to use raw background subtract signals]. Defaults to True.
         """
-        _ = [m.get_average_feature(self.eCLIP, background_method = background_method, normalize = normalize, truncate = True) for m in self.metagene.values()]
+        _ = [m.get_average_feature(self.eCLIP, background_method = background_method, normalize = normalize, truncate = True, **kwargs) for m in self.metagene.values()]
     
     
     
@@ -704,7 +705,7 @@ class Metagene:
         return relative_feature
 
     ################################## about raw values ###########################################
-    def truncation_count(self, eCLIP, rep, interval):
+    def truncation_count(self, eCLIP, rep, interval, **kwargs):
         """[fetch 5 prime end of read from the bam file. return a list of read start count for each position in feature
         ex: sites return [10,11,12,13]; feature = (10,15); return [1,1,1,1,0] count from 5' to 3']
 
@@ -725,7 +726,8 @@ class Metagene:
             
         else:
             
-            sites = read_start_sites(eCLIP.read_densities[rep].bam, chrom=self.chrom, start=interval[0], end=interval[1], strand=self.strand, single_end = eCLIP.single_end, read2 = eCLIP.read2)
+            sites = read_start_sites(eCLIP.read_densities[rep].bam, chrom=self.chrom, start=interval[0], end=interval[1], 
+                            strand=self.strand, single_end = eCLIP.single_end, read2 = eCLIP.read2, **kwargs)
         
         site_count = Counter(sites)
         
@@ -759,7 +761,7 @@ class Metagene:
         
         return rpm
     
-    def get_raw_value(self, eCLIP, truncate = False):
+    def get_raw_value(self, eCLIP, truncate = False, **kwargs):
         """[fetch raw coverage/truncation value for whole gene 
         write in self.coverage or self.sites]
 
@@ -790,7 +792,7 @@ class Metagene:
         for rep in eCLIP.read_densities.keys():
             
             if truncate:
-                save[eCLIP.uID][rep] = self.truncation_count(eCLIP, rep, (self.start, self.stop)) # save list from 5' to 3'
+                save[eCLIP.uID][rep] = self.truncation_count(eCLIP, rep, (self.start, self.stop), **kwargs) # save list from 5' to 3'
             else:
                 save[eCLIP.uID][rep] = self.coverage_value(eCLIP, rep, (self.start, self.stop))
     ################################## about background removal ###########################################
@@ -889,7 +891,7 @@ class Metagene:
     
         
 
-    def get_value(self, eCLIP, background_method = 'subtract', normalize = True, truncate = True):
+    def get_value(self, eCLIP, background_method = 'subtract', normalize = True, truncate = True, **kwargs):
         """[perform background removal, normalization and store in self.value[eCLIP.uID][rep_key]]
 
         Args:
@@ -900,7 +902,7 @@ class Metagene:
         """
         
         # fetch raw sites for all reps and ctrl
-        self.get_raw_value(eCLIP, truncate = truncate)
+        self.get_raw_value(eCLIP, truncate = truncate, **kwargs)
 
         # different raw signals are used
         if truncate:
@@ -987,7 +989,7 @@ class Metagene:
         feature_average  = np.nanmean(np.stack(all_feature_values), axis = 0)
         return feature_average
         
-    def get_average_feature(self, eCLIP, background_method = 'subtract', normalize = True, truncate = True):
+    def get_average_feature(self, eCLIP, background_method = 'subtract', normalize = True, truncate = True, **kwargs):
         """[fetching values for each feature, also averaging them if needed 
         write values in self.truncate or self.densities, depending on truncate]
 
@@ -999,7 +1001,7 @@ class Metagene:
         """
         
         # normalize and background
-        self.get_value(eCLIP, background_method=background_method, normalize=normalize, truncate=truncate)
+        self.get_value(eCLIP, background_method=background_method, normalize=normalize, truncate=truncate, **kwargs)
         
         # specify saving places
         if truncate:
