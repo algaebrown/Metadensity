@@ -1,4 +1,11 @@
 ### This whole script is to filter for canonical transcripts. output is gencode_combine_correct
+### argument 1: uses the gencode gff3
+### argument 2: uses the UCSC genome browser canonical transcript list. Use [UCSC table browser](http://genome.ucsc.edu/cgi-bin/hgTables?db=hg38&hgta_track=wgEncodeGencodeV23) to find the table.
+### see this biostar [post](https://www.biostars.org/p/380102/#380105)
+### first, select genome/assembly according your species.
+### second, select track to the same gencode version as gff3 in args1
+### then group = Genes and gene predictions. table = knownCanonical
+### region = genome
 
 gencode_gff3=$1
 prefix=${gencode_gff3%.annotation.gff3}
