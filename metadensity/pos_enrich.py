@@ -7,17 +7,17 @@ import deepdish as dd
 from scipy.ndimage import gaussian_filter1d
 from statsmodels.stats.multitest import fdrcorrection
 
-def highly_exp_biogps(cell_line = 'HEPG2', transcript_type = 'protein_coding', sample_no = 200):
-    ''' pre-construct metagene for highly expressed transcripts '''
-    biogps = pd.read_csv('/home/hsher/projects/Metadensity/notebooks/gene_attribute_matrix.txt', sep = '\t')
-    biogps = biogps.iloc[2:]
-    biogps.iloc[:, 2:] = biogps.iloc[:, 2:].astype(float, copy = False)
+# def highly_exp_biogps(cell_line = 'HEPG2', transcript_type = 'protein_coding', sample_no = 200):
+#     ''' pre-construct metagene for highly expressed transcripts '''
+#     biogps = pd.read_csv('/home/hsher/projects/Metadensity/notebooks/gene_attribute_matrix.txt', sep = '\t')
+#     biogps = biogps.iloc[2:]
+#     biogps.iloc[:, 2:] = biogps.iloc[:, 2:].astype(float, copy = False)
     
-    highexp_genes = biogps.loc[biogps[cell_line]>0, '#'].tolist()
-    tids = [t.attrs['transcript_id'] for t in transcript if t.attrs['transcript_type'] == transcript_type and t.attrs['gene_name'] in highexp_genes] # hungtingtin
-    cds_metagenes = Build_many_metagene(tids, sample_no = sample_no)
+#     highexp_genes = biogps.loc[biogps[cell_line]>0, '#'].tolist()
+#     tids = [t.attrs['transcript_id'] for t in transcript if t.attrs['transcript_type'] == transcript_type and t.attrs['gene_name'] in highexp_genes] # hungtingtin
+#     cds_metagenes = Build_many_metagene(tids, sample_no = sample_no)
 
-    return cds_metagenes
+#     return cds_metagenes
 
 def construct_distribution(e, metagenes, use_truncate = True):
     ''' Given eCLIP object, construct null and IP density '''
