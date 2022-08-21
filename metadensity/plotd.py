@@ -155,11 +155,35 @@ def beautify(fig, offset = 10, trim = True, left = True):
             sns.despine(offset=offset, trim=trim, ax = ax)
         plt.setp(ax.get_xticklabels(), rotation=90)
     return fig
-    
+
+def rep_merge_options(den_arr, feat, align, metaden_object, rep_handle):
+    '''
+    return the appropriate array depending how user wants to merge the replicate
+    rep_handle: 'mean' to plot the mean of 2 reps. 'concat' to show 2 reps individually. specify rep keys like 'rep1', 'rep2' to show only that rep.
+    '''
+    if rep_handle == 'mean':
+        # mean of all reps
+        density_concat = np.nanmean(np.stack([den_arr[feat,align, r] for r in metaden_object.eCLIP.rep_keys]), axis = 0)
+    elif rep_handle == 'concat':
+        # plot each rep individually
+        density_concat = np.concatenate([den_arr[feat,align, r] for r in metaden_object.eCLIP.rep_keys], axis = 0)
+    else:
+        # specific rep
+        density_concat = den_arr[feat,align, rep_handle]
+    return density_concat
 
 ################################## real plotting functions start here #############################################
-def plot_rbp_map(metas, alpha = 0.6, ymax = 0.001, features_to_show = featnames, sort = False, rep_handle = 'combined', cmap = 'Greys'):
-    ''' get a bunch of Metadensity or Metatruncation Object, plot their individual density in a heatmap'''
+
+def plot_rbp_map(metas, alpha = 0.6, ymax = 0.001, features_to_show = featnames, sort = False, rep_handle = 'mean', cmap = 'Greys'):
+    ''' get a bunch of Metadensity or Metatruncation Object, plot their individual density in a heatmap
+    metas: list of Metadensity or Metatruncate object
+    alpha: transparency in plt.plot()
+    ymax: the max value in plt.set_ylim()
+    features_to_show: list of genomic/transcriptomic features to show. options include all feature names. You can also use pre-set combinations such as `generic_rna`, `protein_coding` etc. Use metadensity.density_array to see what is available
+    sort: whether to sort RNAs (rows in RBPmap) "lexicographically". setting true will make RNA with similar binding pattern cluster together on a map
+    rep_handle: 'mean' to plot the mean of 2 reps. 'concat' to show 2 reps individually. specify rep keys like 'rep1', 'rep2' to show only that rep.
+    cmap: color map to use 
+    '''
     fig, ax_dict = generate_axis(nrows = len(metas), color_bar = True, features_to_show = features_to_show)
     
     # set ylabel
@@ -182,15 +206,7 @@ def plot_rbp_map(metas, alpha = 0.6, ymax = 0.001, features_to_show = featnames,
         for feat in features_to_show:
             for align in ['left', 'right']:
                 # extract density
-                if rep_handle == 'combined':
-                    # mean of all reps
-                    density_concat = np.nanmean(np.stack([den_arr[feat,align, r] for r in m.eCLIP.rep_keys]), axis = 0)
-                elif rep_handle == 'all':
-                    # plot each rep individually
-                    density_concat = np.concatenate([den_arr[feat,align, r] for r in m.eCLIP.rep_keys], axis = 0)
-                else:
-                    # specific rep
-                    density_concat = den_arr[feat,align, rep_handle]
+                density_concat = rep_merge_options(den_arr, feat, align, m, rep_handle)
                 
                 # sort lexicographically for better visualization
                 if sort:
@@ -218,7 +234,7 @@ def plot_rbp_map(metas, alpha = 0.6, ymax = 0.001, features_to_show = featnames,
 # show that std is large
 def plot_mean_density(metas, ymax = 0.001, alpha = 0.3, plot_std = True, stat = 'mean', 
 features_to_show = featnames, smooth = False, color_dict = None, mask = False, ylabel = None,
-sigma = 5):
+sigma = 5, rep_handle = 'concat'):
     ''' get a bunch of eCLIPs, plot their mean density'''
     fig, ax_dict = generate_axis(nrows = 1,  features_to_show = features_to_show)
 
@@ -244,7 +260,7 @@ sigma = 5):
             for align in ['left', 'right']:
 
                 ####### make replicate  together and mean #########
-                density_concat = np.concatenate([den_arr[feat,align, r] for r in m.eCLIP.rep_keys], axis = 0)
+                density_concat = rep_merge_options(den_arr, feat, align, m, rep_handle)
                 flen = feat_len_dict[feat]
                 if align == 'left':
                     density_concat = density_concat[:, :flen]
