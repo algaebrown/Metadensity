@@ -5,7 +5,7 @@
 
 
    
-Tutorial and Example
+Welcome to Metadensity
 ====================
 
 
@@ -13,9 +13,9 @@ Tutorial and Example
   :width: 400
   :alt: branchpoins
 
-.. image:: SF3B4_brmap.svg
-  :width: 400
-  :alt: RBP maps
+
+Tutorial
+-----------------------------------------------
 
 :doc:`tutorial`
 

@@ -3,4 +3,3 @@ ipykernel
 nbsphinx
 pydata-sphinx-theme
 pandoc
-
