@@ -76,14 +76,6 @@ metadensity.shape\_from\_read module
    :undoc-members:
    :show-inheritance:
 
-metadensity.shapemer\_from\_read module
----------------------------------------
-
-.. automodule:: metadensity.shapemer_from_read
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 metadensity.shrink\_region module
 ---------------------------------
 
