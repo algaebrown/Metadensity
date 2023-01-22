@@ -3,3 +3,14 @@ ipykernel
 nbsphinx
 pydata-sphinx-theme
 pandoc
+pybedtools
+deepdish
+scipy
+pybigwig
+pysam
+biopython
+scikit-learn
+seaborn
+statsmodels
+pandas
+numpy

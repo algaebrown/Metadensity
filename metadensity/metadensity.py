@@ -628,7 +628,7 @@ class Metagene:
                 )
         self.featnames.append(feature_name)
         settings.feat_len[feature_name] = length
-    def create_downstream_feature(self, query_interval, feature_type = 'intron', feature_name = 'terminal_exon'):
+    def create_downstream_feature(self, query_interval, feature_type = 'intron', feature_name = 'terminal_exon', length = 100):
         """[create closest, 3' feature of the query interval
         for example, intron list: (100,200), (400,500), (700,900), query exon (500,700), return (700,900) if '+' else (400,500)]
 
@@ -652,11 +652,11 @@ class Metagene:
                     next_feat = o
                     break
         try:
-            self.create_feature(next_feat, f'{feature_name}_downstream_{feature_type}')
+            self.create_feature(next_feat, f'{feature_name}_downstream_{feature_type}', length = length)
             
         except:
             self.featnames.append(f'{feature_name}_downstream_{feature_type}')
-    def create_upstream_feature(self, query_interval, feature_type = 'intron', feature_name = 'terminal_exon'):
+    def create_upstream_feature(self, query_interval, feature_type = 'intron', feature_name = 'terminal_exon', length = 100):
         """[create closest, 3' feature of the query interval
         for example, intron list: (100,200), (400,500), (700,900), query exon (500,700), return (700,900) if '+' else (400,500)]
 
@@ -681,7 +681,7 @@ class Metagene:
                     next_feat = o
                     break
         try:
-            self.create_feature(next_feat, f'{feature_name}_upstream_{feature_type}')
+            self.create_feature(next_feat, f'{feature_name}_upstream_{feature_type}', length = length)
             
         except:
             self.featnames.append(f'{feature_name}_upstream_{feature_type}')
