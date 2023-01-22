@@ -57,24 +57,23 @@ class eCLIP:
     
     @classmethod
     def from_series(cls, series, single_end = True, read2 = True):
-        """[build eCLIP object from series containing absolute path for .bam, .bw, .beds,
-        ]
+        """[build eCLIP object from series containing absolute path for .bam, .bw, .beds]
+
         Args:
-            series ([pd.Series]): [RBP for name; uid for uID.
-        bam_0, bam_1, bam_control (or bam_control_0, bam_control_1);
-        plus_0, plus_1, plus_control for pos.bw; minus_0, minus_1, minus_control for neg.bw;
-        bed_0, bed_1 for individual peaks, idr for IDR peaks.
-        _0, _1 is for replicate 1,2; you can extend to the # of reps you have.
-        for control, if you have more than 1 SMInput, use bam_control_0, bam_control_1...etc.
-        If only 1 SMInput, simply omit _0. use bam_control, plue_control...etc]
+            series ([pd.Series]): keys include "RBP" for naming; "uid" for unique ID, has to be unique else will cross-contaminate other objects.
+            "bam_0", "bam_1", "bam_control" (or "bam_control_0", "bam_control_1") contain filenmes to bam;
+            "plus_0", "plus_1", "plus_control" for bigwigs filenames for the plus strand; "minus_0", "minus_1", "minus_control" for bigwig filenames to the negtaive strand;
+            "bed_0", "bed_1" for individual replicate peaks, "idr" for consensus peaks for multiple replicates.
+            If your technology, is not strand-specific, set both strand's bigwig filenames to the same file.
+            _0, _1 is for replicate 1,2; you can extend to the number of reps you have.
+            for control, if you have more than 1 SMInput, use bam_control_0, bam_control_1...etc.
+            If only 1 SMInput, simply omit _0. use bam_control, plue_control...etc
+            If your technology has no Input or any sort of background control, set the controls to a random bam file and use "background_method=None" in Metadensity to hack around.
             single_end (bool, optional): [if your CLIP is done in single end set to True else Metatruncate will have problem]. Defaults to True.
             read2 (bool, optional): [Use read 2 only if sequencing is paired-end.]. Defaults to True.
         Returns:
             [eCLIP]: [a object that holds eCLIP data]
         """
-        ''' :
-        
-        '''
 
         # autodetect SMInput structure
         if 'bam_control' in series.index or 'plus_control' in series.index:
@@ -144,6 +143,7 @@ class eCLIP:
     
     def find_idr_transcript(self, genome_coord = transcript):
         """[find transcript containing at least 1 IDR peak]
+
         Kwargs:
             genome_coord: (BedTool) transcript coordintae. default are canonical transcripts.
         """
@@ -455,6 +455,38 @@ class Metadensity(Meta):
             transcripts ([BedTool], optional): [Use BedTool containing transcripts]. Defaults to None.
             transcript_ids ([list], optional): [list of transcript or gene ids. the ids needs to be in the pre-built coodinate]. Defaults to None.
             deep_dish_path ([str], optional): [path to precomputed density array deepdish.h5. If specified, directly load from path and override all options]. Defaults to None.
+
+        Example:
+            If you want to create Metadensity on a subset of transcripts, here are some ways
+            specify by Enesmbl gene id or transcript id by ``transcript_ids=``. 
+            Make sure this ID exists in the annotation version you use!
+
+            .. code-block:: python
+
+                Metadensity(eCLIP_obj, 'some_eclip', transcript_ids = ['ESNG123456.7'])
+
+            To find unique transcripts contain at least 1 region (e.g. peaks) specified, use ``transcripts=`` :
+
+            .. code-block:: python
+
+                your_peak_pybedtool_object = BedTool('path_to_your_peak_bed_file')
+                selected_transcript = transcript.intersect(your_peak_pybedtool_object, s = True, u = True) # transcript is a built-in pybedtool obj
+                Metadensity(eCLIP_obj), 'some_eclip', transcripts = selected_transcript)
+
+            if you are calculating metadensity in the same subset of genes over multiple clips, 
+            you can pre-build Metagene object to save time! use ``metagene=`` :
+
+            .. code-block:: python
+
+                transcript_id_interested = ['ENSG12345.7']
+                metagene_of_interest = Build_many_metagene(id_list = transcript_id_interested)
+                m1=Metadensity(eCLIP_obj_1, 'eclip_one_on_these_genes', metagenes = metagene_of_interest)
+                m2=Metadensity(eCLIP_obj_2, 'eclip_two_on_these_genes', metagenes = metagene_of_interest)
+
+            If you specify none of ``transcripts``, ``transcript_ids`` or ``metagene``, it will inherently use transcript containing at least 1 IDR peak. 
+            If there is no IDR (eCLIP.idr) peak, it falls back to transcript containing at least 1 replicate's peak. 
+            If no peaks are specified in the eCLIP object, it fails.
+            
         """
         # generate metagene coords
         super().__init__(eCLIP, name, sample_no, metagenes = metagenes, transcripts = transcripts, transcript_ids = transcript_ids
@@ -609,10 +641,10 @@ class Metagene:
             feature_name ([str]): [name of the feature]
         Example:
             branchpoint for this gene is 500. The gene is from (100, 300).
-            create_feature(interval=500, feature_name = 'branchpoint')
+            ``create_feature(interval=500, feature_name = 'branchpoint')``
 
             a snoRNA is nested in this gene from (130, 150).
-            call create_feature(interval(130,150), feature_name = 'snoRNA')
+            ``create_feature(interval(130,150), feature_name = 'snoRNA')``
         """
         try:
             self.features[feature_name].add(
@@ -1125,8 +1157,7 @@ class miRNA(Metagene):
 
     
 def Build_many_metagene(id_list=None, sample_no = 200, transcript_type = 'protein_coding'):
-    """[Create Metagene object for regions for key transcript 
-    hg19 does not have 'three_prime_UTR and five_prime_UTR which is annoying]
+    """[Create Metagene object for regions for key transcript]
 
     Args:
         id_list ([list], optional): [List of transcript/gene IDs]. Defaults to None.
