@@ -21,6 +21,14 @@ from here on, to reproduce the code in the notebooks, you need to download eCLIP
    prep_data
    1_Example_on_SF3B4
 
+Starting from skipper data
+--------------------------------------
+
+.. toctree::
+   :maxdepth: 1
+
+   1_Example_using_skipper_outputs
+
 Create customized features: intronic polyadenylation, miRNA hosting genes
 ----------------------------------------------------------------------------
 .. toctree::
