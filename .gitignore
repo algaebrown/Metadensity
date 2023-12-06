@@ -142,5 +142,4 @@ cython_debug/
 *.svg
 
 # data
-*.csv
 metadensity/data*
