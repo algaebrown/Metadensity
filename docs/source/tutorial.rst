@@ -6,7 +6,7 @@ Using Metadensity in Jupyter notebooks
 .. toctree::
    :maxdepth: 1
 
-   1_Example_on_test_data.ipynb
+   0_Example_on_test_data.ipynb
 
 More data means more fun
 --------------------------------------
@@ -14,12 +14,7 @@ from here on, to reproduce the code in the notebooks, you need to download eCLIP
 
 `ENCODE <https://www.encodeproject.org/>`_ 
 
-.. toctree::
-   :maxdepth: 1
 
-   1_Example_on_HNRNPC_RPS3_RBFOX_LIN28
-   prep_data
-   1_Example_on_SF3B4
 
 Starting from skipper data
 --------------------------------------
