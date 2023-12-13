@@ -58,25 +58,4 @@ Generalizing to other sequencing technology
 .. toctree::
     :maxdepth: 1
 
-   1_Example_on_Par-CLIP-YBX1.ipynb
-
-Comparing using CIMs and CITs
------------------------------------------------
-.. toctree::
-    :maxdepth: 1
-
-    1_Example_on_SF3B4-compare-CIMS-CITS.ipynb
-
-Comparing data from different cell lines
------------------------------------------------
-.. toctree::
-    :maxdepth: 1
-
-    1_Example_on_HNRNPC_on_different_cell_line.ipynb
-
-Showing replicates seperately
------------------------------------------------
-.. toctree::
-    :maxdepth: 1
-
-    1_Example_on_SF3B4-rep_seperate.ipynb
+    1_Example_on_Par-CLIP-YBX1.ipynb

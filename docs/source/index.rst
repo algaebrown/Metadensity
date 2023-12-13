@@ -13,6 +13,10 @@ Welcome to Metadensity
   :width: 400
   :alt: branchpoins
 
+How to install
+-----------------------------------------------
+
+:doc:`installation`
 
 Tutorial
 -----------------------------------------------
